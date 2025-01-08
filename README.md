@@ -1,6 +1,3 @@
-## Loom demo of the MVP
-
-https://www.loom.com/share/69a5a20dda504a89aa18e61605e33bcd?sid=7ccd2f5e-109b-40b4-9591-6461dae10ed3
 
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
