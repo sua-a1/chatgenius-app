@@ -65,14 +65,12 @@ export function useChannelManagement(workspaceId: string | undefined, channels: 
   const checkAdminStatus = async () => {
     try {
       const { data, error } = await supabase
-        .from('workspace_memberships')
-        .select('role')
-        .eq('workspace_id', workspaceId)
-        .eq('user_id', profile!.id)
-        .single()
+        .rpc('check_workspace_admin_status', {
+          target_workspace_id: workspaceId
+        })
 
       if (error) throw error
-      setIsAdmin(data.role === 'admin' || data.role === 'owner')
+      setIsAdmin(data === 'admin' || data === 'owner')
     } catch (error) {
       console.error('Error checking admin status:', error)
       setIsAdmin(false)
@@ -83,29 +81,18 @@ export function useChannelManagement(workspaceId: string | undefined, channels: 
     try {
       setIsLoadingWorkspace(true)
       const { data: rawData, error } = await supabase
-        .from('workspace_memberships')
-        .select(`
-          user_id,
-          role,
-          users (
-            id,
-            email,
-            username,
-            avatar_url
-          )
-        `)
-        .eq('workspace_id', workspaceId)
+        .rpc('get_workspace_members', {
+          target_workspace_id: workspaceId
+        })
 
       if (error) throw error
 
-      // Safely cast the data
-      const data = rawData as unknown as DatabaseWorkspaceMember[]
-      const members = data.map(item => ({
-        id: item.users.id,
-        email: item.users.email,
-        username: item.users.username,
-        avatar_url: item.users.avatar_url,
-        role: item.role
+      const members: WorkspaceMember[] = rawData.map((member: any) => ({
+        id: member.user_id,
+        email: member.email || '',
+        username: member.username,
+        avatar_url: member.avatar_url,
+        role: member.role
       }))
 
       setWorkspaceMembers(members)
@@ -113,7 +100,7 @@ export function useChannelManagement(workspaceId: string | undefined, channels: 
       console.error('Error loading workspace members:', error)
       toast({
         variant: 'destructive',
-        title: 'Error loading workspace members',
+        title: 'Error loading members',
         description: 'Could not load workspace members. Please try again.',
       })
     } finally {

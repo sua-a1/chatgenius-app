@@ -43,13 +43,35 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return
       }
 
+      // Try to get existing profile
       const { data: profile, error } = await supabase
         .from('users')
         .select('*')
         .eq('id', user.id)
         .single()
 
-      if (error) throw error
+      if (error) {
+        if (error.code === 'PGRST116') {  // Record not found
+          // Create new profile
+          const { data: newProfile, error: createError } = await supabase
+            .from('users')
+            .insert([{
+              id: user.id,
+              email: user.email,
+              username: user.email?.split('@')[0] || `user_${user.id.slice(0, 8)}`,
+              notifications: { email: true, push: true },
+              theme: 'light',
+            }])
+            .select()
+            .single()
+
+          if (createError) throw createError
+          setProfile(newProfile)
+          return
+        }
+        throw error
+      }
+
       setProfile(profile)
     } catch (error) {
       console.error('Error loading user profile:', error)

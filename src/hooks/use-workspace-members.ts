@@ -8,16 +8,14 @@ interface WorkspaceMember extends Omit<User, 'status'> {
   status: 'online' | 'offline' | 'away' | 'busy'
 }
 
-interface WorkspaceMembershipData {
-  role: 'member' | 'admin'
-  user: {
-    id: string
-    username: string
-    email: string
-    avatar_url: string
-    status: 'online' | 'offline' | 'away' | 'busy'
-    created_at: string
-  }
+interface WorkspaceMemberData {
+  user_id: string;
+  role: 'member' | 'admin';
+  username: string;
+  email: string;
+  avatar_url: string | null;
+  status: 'online' | 'offline' | 'away' | 'busy';
+  created_at: string;
 }
 
 export function useWorkspaceMembers(workspaceId: string | null) {
@@ -32,30 +30,20 @@ export function useWorkspaceMembers(workspaceId: string | null) {
     setIsLoading(true)
     try {
       const { data: memberships, error: membershipsError } = await supabase
-        .from('workspace_memberships')
-        .select(`
-          role,
-          user:users (
-            id,
-            username,
-            email,
-            avatar_url,
-            status,
-            created_at
-          )
-        `)
-        .eq('workspace_id', workspaceId)
+        .rpc('get_workspace_members_with_details', {
+          target_workspace_id: workspaceId
+        })
 
       if (membershipsError) throw membershipsError
 
-      const formattedMembers: WorkspaceMember[] = (memberships || []).map(m => {
-        const membership = m as unknown as WorkspaceMembershipData
-        return {
-          ...membership.user,
-          role: membership.role,
-          avatar: membership.user.avatar_url
-        }
-      })
+      const formattedMembers: WorkspaceMember[] = (memberships || []).map((m: WorkspaceMemberData) => ({
+        id: m.user_id,
+        username: m.username,
+        email: m.email,
+        avatar: m.avatar_url,
+        status: m.status,
+        role: m.role
+      }))
 
       setMembers(formattedMembers)
     } catch (error: any) {
@@ -74,54 +62,23 @@ export function useWorkspaceMembers(workspaceId: string | null) {
     if (!workspaceId) return
 
     try {
-      // First, find the user by email
-      const { data: user, error: userError } = await supabase
-        .from('users')
-        .select('id, email')
-        .eq('email', email.toLowerCase().trim())
-        .single()
-
-      if (userError) {
-        if (userError.code === 'PGRST116') {
-          throw new Error('User not found')
-        }
-        throw userError
-      }
-
-      // Check if user is already a member
-      const { data: existingMember, error: existingError } = await supabase
-        .from('workspace_memberships')
-        .select('id')
-        .eq('workspace_id', workspaceId)
-        .eq('user_id', user.id)
-        .maybeSingle()
-
-      if (existingError) throw existingError
-      if (existingMember) {
-        throw new Error('User is already a member of this workspace')
-      }
-
-      // Then add them to the workspace
-      const { error: membershipError } = await supabase
-        .from('workspace_memberships')
-        .insert({
-          workspace_id: workspaceId,
-          user_id: user.id,
-          role,
-          joined_at: new Date().toISOString()
+      const { data: userId, error } = await supabase
+        .rpc('add_workspace_member', {
+          target_workspace_id: workspaceId,
+          target_email: email,
+          target_role: role
         })
 
-      if (membershipError) throw membershipError
+      if (error) throw error
 
+      // Reload members to get updated list
+      await loadMembers()
       toast({
         title: 'Member added',
-        description: `Successfully added ${email} to the workspace`
+        description: 'Successfully added new member to the workspace.'
       })
-
-      // Reload members to get the updated list
-      await loadMembers()
     } catch (error: any) {
-      console.error('Error adding workspace member:', error)
+      console.error('Error adding member:', error)
       toast({
         variant: 'destructive',
         title: 'Error adding member',
@@ -135,22 +92,27 @@ export function useWorkspaceMembers(workspaceId: string | null) {
 
     try {
       const { error } = await supabase
-        .from('workspace_memberships')
-        .update({ role: newRole })
-        .eq('workspace_id', workspaceId)
-        .eq('user_id', userId)
+        .rpc('update_workspace_member_role', {
+          target_workspace_id: workspaceId,
+          target_user_id: userId,
+          new_role: newRole
+        })
 
       if (error) throw error
 
+      // Update local state
+      setMembers(prev =>
+        prev.map(member =>
+          member.id === userId
+            ? { ...member, role: newRole }
+            : member
+        )
+      )
+
       toast({
         title: 'Role updated',
-        description: `Member role updated to ${newRole}`
+        description: `Successfully updated member role to ${newRole}.`
       })
-
-      // Update local state
-      setMembers(members.map(member =>
-        member.id === userId ? { ...member, role: newRole } : member
-      ))
     } catch (error: any) {
       console.error('Error updating member role:', error)
       toast({
@@ -166,22 +128,22 @@ export function useWorkspaceMembers(workspaceId: string | null) {
 
     try {
       const { error } = await supabase
-        .from('workspace_memberships')
-        .delete()
-        .eq('workspace_id', workspaceId)
-        .eq('user_id', userId)
+        .rpc('remove_workspace_member', {
+          target_workspace_id: workspaceId,
+          target_user_id: userId
+        })
 
       if (error) throw error
 
+      // Update local state
+      setMembers(prev => prev.filter(member => member.id !== userId))
+
       toast({
         title: 'Member removed',
-        description: 'Member has been removed from the workspace'
+        description: 'Successfully removed member from workspace.'
       })
-
-      // Update local state
-      setMembers(members.filter(member => member.id !== userId))
     } catch (error: any) {
-      console.error('Error removing workspace member:', error)
+      console.error('Error removing member:', error)
       toast({
         variant: 'destructive',
         title: 'Error removing member',

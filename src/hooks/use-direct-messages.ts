@@ -257,60 +257,52 @@ export function useDirectMessages(
 
   const loadRecentChats = async () => {
     try {
-      // First, get all workspace members
+      if (!workspaceId || !profile?.id) return
+
+      // Get all workspace members except current user
       const { data: members, error: membersError } = await supabase
-        .from('workspace_memberships')
-        .select(`
-          user_id,
-          users (
-            id,
-            username,
-            avatar_url
-          )
-        `)
+        .from('workspace_members')
+        .select('user_id, username, avatar_url')
         .eq('workspace_id', workspaceId)
-        .neq('user_id', profile!.id)
+        .neq('user_id', profile.id)
 
-      if (membersError) throw membersError
+      if (membersError) {
+        console.error('Error loading recent chats:', membersError)
+        throw membersError
+      }
 
-      // Then, get recent messages for each member
-      const { data: recentMessages, error: messagesError } = await supabase
-        .from('direct_messages')
-        .select('*')
-        .or(`sender_id.eq.${profile!.id},receiver_id.eq.${profile!.id}`)
-        .order('created_at', { ascending: false })
+      // Get latest messages for each member
+      const recentChatsWithTime = await Promise.all(
+        members.map(async (member) => {
+          const { data: messages } = await supabase
+            .from('direct_messages')
+            .select('created_at')
+            .eq('workspace_id', workspaceId)
+            .or(`sender_id.eq.${member.user_id},receiver_id.eq.${member.user_id}`)
+            .order('created_at', { ascending: false })
+            .limit(1)
 
-      if (messagesError) throw messagesError
+          return {
+            user_id: member.user_id,
+            username: member.username,
+            avatar_url: member.avatar_url,
+            last_message_at: messages?.[0]?.created_at || new Date(0).toISOString()
+          }
+        })
+      )
 
-      // Create a map of user_id to last message timestamp
-      const lastMessageMap = new Map<string, string>()
-      recentMessages.forEach((msg) => {
-        const otherId = msg.sender_id === profile!.id ? msg.receiver_id : msg.sender_id
-        if (!lastMessageMap.has(otherId)) {
-          lastMessageMap.set(otherId, msg.created_at)
-        }
-      })
-
-      // Combine member info with last message timestamps
-      const chats = ((members || []) as unknown as DatabaseMember[]).map((member) => ({
-        user_id: member.user_id,
-        username: member.users.username,
-        avatar_url: member.users.avatar_url,
-        last_message_at: lastMessageMap.get(member.user_id) || new Date(0).toISOString()
-      }))
-
-      // Sort by last message time (most recent first) and take first 5
-      const sortedChats = chats
-        .sort((a, b) => new Date(b.last_message_at).getTime() - new Date(a.last_message_at).getTime())
-        .slice(0, 5)
+      // Sort by most recent message
+      const sortedChats = recentChatsWithTime.sort(
+        (a, b) => new Date(b.last_message_at).getTime() - new Date(a.last_message_at).getTime()
+      )
 
       setRecentChats(sortedChats)
     } catch (error) {
       console.error('Error loading recent chats:', error)
       toast({
         variant: 'destructive',
-        title: 'Error loading chats',
-        description: 'Could not load recent chats. Please try again.',
+        title: 'Error loading recent chats',
+        description: error instanceof Error ? error.message : 'Please try again later.',
       })
     }
   }
@@ -382,14 +374,13 @@ export function useDirectMessages(
     if (!profile || !selectedUserId || !workspaceId) return false
 
     try {
-      const { error } = await supabase
-        .from('direct_messages')
-        .insert([{
-          message: content,
+      // Call the stored procedure to send the message
+      const { data, error } = await supabase
+        .rpc('send_direct_message', {
           workspace_id: workspaceId,
-          sender_id: profile.id,
           receiver_id: selectedUserId,
-        }])
+          message_content: content
+        })
 
       if (error) throw error
       return true
@@ -398,7 +389,7 @@ export function useDirectMessages(
       toast({
         variant: 'destructive',
         title: 'Error sending message',
-        description: 'Could not send message. Please try again.',
+        description: error instanceof Error ? error.message : 'Could not send message. Please try again.',
       })
       return false
     }

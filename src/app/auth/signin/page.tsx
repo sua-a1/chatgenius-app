@@ -16,7 +16,6 @@ export default function SignInPage() {
   const { toast } = useToast()
   const searchParams = useSearchParams()
   const error = searchParams.get('error')
-  const redirectTo = searchParams.get('redirectTo') || '/'
 
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -26,7 +25,7 @@ export default function SignInPage() {
       const { error } = await supabase.auth.signInWithOtp({
         email,
         options: {
-          emailRedirectTo: `${window.location.origin}/auth/callback?redirectTo=${encodeURIComponent(redirectTo)}`,
+          emailRedirectTo: `${window.location.origin}/auth/callback`,
         },
       })
 
@@ -49,25 +48,6 @@ export default function SignInPage() {
     }
   }
 
-  const handleSocialSignIn = async (provider: 'google' | 'github') => {
-    try {
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider,
-        options: {
-          redirectTo: `${window.location.origin}/auth/callback?redirectTo=${encodeURIComponent(redirectTo)}`,
-        },
-      })
-
-      if (error) throw error
-    } catch (error: any) {
-      toast({
-        title: 'Error',
-        description: error.message || 'Could not authenticate with ' + provider,
-        variant: 'destructive',
-      })
-    }
-  }
-
   return (
     <div className="flex min-h-screen items-center justify-center">
       <Card className="w-[350px]">
@@ -81,57 +61,25 @@ export default function SignInPage() {
               {decodeURIComponent(error)}
             </div>
           )}
-          <form onSubmit={handleSignIn} className="space-y-4">
-            <div className="space-y-1.5">
-              <Label htmlFor="email">Email</Label>
-              <Input
-                id="email"
-                type="email"
-                placeholder="Enter your email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-                disabled={isLoading}
-              />
+          <form onSubmit={handleSignIn}>
+            <div className="grid w-full items-center gap-4">
+              <div className="flex flex-col space-y-1.5">
+                <Label htmlFor="email">Email</Label>
+                <Input
+                  id="email"
+                  type="email"
+                  placeholder="Enter your email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                  disabled={isLoading}
+                />
+              </div>
+              <Button type="submit" disabled={isLoading}>
+                {isLoading ? 'Sending magic link...' : 'Continue with Email'}
+              </Button>
             </div>
-            <Button 
-              className="w-full" 
-              type="submit" 
-              disabled={isLoading}
-            >
-              {isLoading ? 'Sending magic link...' : 'Continue with Email'}
-            </Button>
           </form>
-          
-          <div className="relative my-4">
-            <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t" />
-            </div>
-            <div className="relative flex justify-center text-xs uppercase">
-              <span className="bg-background px-2 text-muted-foreground">
-                Or continue with
-              </span>
-            </div>
-          </div>
-
-          <div className="grid gap-2">
-            <Button
-              variant="outline"
-              onClick={() => handleSocialSignIn('google')}
-              disabled={isLoading}
-              className="w-full"
-            >
-              Google
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => handleSocialSignIn('github')}
-              disabled={isLoading}
-              className="w-full"
-            >
-              GitHub
-            </Button>
-          </div>
         </CardContent>
       </Card>
     </div>

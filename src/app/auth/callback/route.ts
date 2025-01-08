@@ -9,7 +9,6 @@ export async function GET(request: Request) {
   try {
     const requestUrl = new URL(request.url)
     const code = requestUrl.searchParams.get('code')
-    const redirectTo = requestUrl.searchParams.get('redirectTo') || '/'
 
     if (!code) {
       return NextResponse.redirect(`${requestUrl.origin}/auth/signin?error=No code provided`)
@@ -64,8 +63,7 @@ export async function GET(request: Request) {
       }
     }
 
-    // Redirect to the original requested page or home
-    return NextResponse.redirect(`${requestUrl.origin}${redirectTo}`)
+    return NextResponse.redirect(requestUrl.origin)
   } catch (error: any) {
     console.error('Auth callback error:', error)
     return NextResponse.redirect(

@@ -37,54 +37,18 @@ export function useWorkspaces() {
       setIsLoading(true)
       console.log('Starting to load workspaces...')
 
-      // Get workspaces where user is owner
-      const { data: ownedWorkspaces, error: ownedError } = await supabase
-        .from('workspaces')
+      // Get all accessible workspaces from the secure view
+      const { data: workspaces, error } = await supabase
+        .from('accessible_workspaces')
         .select('*')
-        .eq('owner_id', profile!.id)
 
-      if (ownedError) {
-        console.error('Error loading owned workspaces:', ownedError)
-        throw ownedError
+      if (error) {
+        console.error('Error loading workspaces:', error)
+        throw error
       }
 
-      // Get workspaces where user is a member
-      const { data: memberWorkspaces, error: memberError } = await supabase
-        .from('workspace_memberships')
-        .select(`
-          workspace_id,
-          workspaces (
-            id,
-            name,
-            owner_id,
-            created_at,
-            updated_at
-          )
-        `)
-        .eq('user_id', profile!.id)
-
-      if (memberError) {
-        console.error('Error loading member workspaces:', memberError)
-        throw memberError
-      }
-
-      // Combine and deduplicate workspaces
-      const memberWorkspacesList = memberWorkspaces
-        .map(m => m.workspaces)
-        .filter(w => w !== null)
-
-      const allWorkspaces = [
-        ...(ownedWorkspaces || []),
-        ...memberWorkspacesList
-      ]
-
-      // Remove duplicates based on workspace ID
-      const uniqueWorkspaces = Array.from(
-        new Map(allWorkspaces.map(w => [w.id, w])).values()
-      )
-
-      console.log('All workspaces loaded:', uniqueWorkspaces)
-      setWorkspaces(uniqueWorkspaces)
+      console.log('All workspaces:', workspaces)
+      setWorkspaces(workspaces || [])
     } catch (error) {
       console.error('Error loading workspaces:', error)
       toast({

@@ -1,4 +1,10 @@
--- Drop existing workspace and membership policies
+-- First drop all existing policies
+drop policy if exists "workspace_select" on public.workspaces;
+drop policy if exists "workspace_modify" on public.workspaces;
+drop policy if exists "workspace_membership_select" on public.workspace_memberships;
+drop policy if exists "workspace_membership_insert" on public.workspace_memberships;
+drop policy if exists "workspace_membership_update" on public.workspace_memberships;
+drop policy if exists "workspace_membership_delete" on public.workspace_memberships;
 drop policy if exists "Users can view workspace memberships they are part of" on public.workspace_memberships;
 drop policy if exists "Workspace membership access" on public.workspace_memberships;
 drop policy if exists "Workspace read access" on public.workspaces;
@@ -12,28 +18,27 @@ drop policy if exists "workspace_member_read" on public.workspaces;
 drop policy if exists "workspace_membership_owner_all" on public.workspace_memberships;
 drop policy if exists "workspace_membership_self_read" on public.workspace_memberships;
 
--- Enable RLS
+-- Make sure RLS is enabled
 alter table public.workspaces enable row level security;
 alter table public.workspace_memberships enable row level security;
 
--- Simple workspace policies
-create policy "workspace_select"
+-- Create new simplified policies with unique names
+create policy "workspace_read_all"
     on public.workspaces
     for select
     using (true);  -- Allow reading all workspaces, access control via joins
 
-create policy "workspace_modify"
+create policy "workspace_owner_modify"
     on public.workspaces
     for all
     using (owner_id = auth.uid());
 
--- Simple workspace membership policies
-create policy "workspace_membership_select"
+create policy "workspace_member_read_own"
     on public.workspace_memberships
     for select
     using (user_id = auth.uid());  -- Only see own memberships
 
-create policy "workspace_membership_insert"
+create policy "workspace_owner_insert_members"
     on public.workspace_memberships
     for insert
     with check (
@@ -44,7 +49,7 @@ create policy "workspace_membership_insert"
         )
     );
 
-create policy "workspace_membership_update"
+create policy "workspace_owner_update_members"
     on public.workspace_memberships
     for update
     using (
@@ -55,7 +60,7 @@ create policy "workspace_membership_update"
         )
     );
 
-create policy "workspace_membership_delete"
+create policy "workspace_owner_delete_members"
     on public.workspace_memberships
     for delete
     using (
