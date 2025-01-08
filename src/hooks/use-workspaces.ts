@@ -27,6 +27,44 @@ export function useWorkspaces() {
     if (profile?.id) {
       console.log('Loading workspaces for user:', profile.id)
       loadWorkspaces()
+
+      // Set up realtime subscriptions
+      const workspacesChannel = supabase
+        .channel('workspaces')
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'workspaces',
+          },
+          async () => {
+            await loadWorkspaces()
+          }
+        )
+        .subscribe()
+
+      const membershipsChannel = supabase
+        .channel('workspace_memberships')
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'workspace_memberships',
+            filter: `user_id=eq.${profile.id}`,
+          },
+          async () => {
+            await loadWorkspaces()
+          }
+        )
+        .subscribe()
+
+      // Cleanup subscriptions
+      return () => {
+        workspacesChannel.unsubscribe()
+        membershipsChannel.unsubscribe()
+      }
     } else {
       console.log('No profile ID available')
     }

@@ -59,8 +59,60 @@ export function useChannelManagement(workspaceId: string | undefined, channels: 
     if (workspaceId && profile?.id) {
       checkAdminStatus()
       loadWorkspaceMembers()
+
+      // Set up realtime subscription for workspace memberships
+      const channel = supabase
+        .channel(`channel_management:${workspaceId}`)
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'workspace_memberships',
+            filter: `workspace_id=eq.${workspaceId}`,
+          },
+          async () => {
+            await loadWorkspaceMembers()
+            await checkAdminStatus()
+          }
+        )
+        .subscribe()
+
+      // Cleanup subscription
+      return () => {
+        channel.unsubscribe()
+      }
     }
   }, [workspaceId, profile?.id])
+
+  // Load channel members when a channel is selected
+  useEffect(() => {
+    if (selectedChannel) {
+      loadChannelMembers(selectedChannel.id)
+
+      // Set up realtime subscription for channel memberships
+      const channel = supabase
+        .channel(`channel_members:${selectedChannel.id}`)
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'channel_memberships',
+            filter: `channel_id=eq.${selectedChannel.id}`,
+          },
+          async () => {
+            await loadChannelMembers(selectedChannel.id)
+          }
+        )
+        .subscribe()
+
+      // Cleanup subscription
+      return () => {
+        channel.unsubscribe()
+      }
+    }
+  }, [selectedChannel])
 
   const checkAdminStatus = async () => {
     try {

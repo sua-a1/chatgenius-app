@@ -24,6 +24,37 @@ export function useWorkspaceMembers(workspaceId: string | null) {
   const [members, setMembers] = useState<WorkspaceMember[]>([])
   const [isLoading, setIsLoading] = useState(false)
 
+  // Load initial data and set up subscriptions
+  useEffect(() => {
+    if (workspaceId) {
+      loadMembers()
+      
+      // Set up realtime subscription
+      const channel = supabase
+        .channel(`workspace_members:${workspaceId}`)
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'workspace_memberships',
+            filter: `workspace_id=eq.${workspaceId}`
+          },
+          async (payload) => {
+            // Reload the entire member list when any change occurs
+            // This ensures we have the most up-to-date data including user details
+            await loadMembers()
+          }
+        )
+        .subscribe()
+
+      // Cleanup subscription
+      return () => {
+        channel.unsubscribe()
+      }
+    }
+  }, [workspaceId])
+
   const loadMembers = async () => {
     if (!workspaceId) return
 
@@ -151,11 +182,6 @@ export function useWorkspaceMembers(workspaceId: string | null) {
       })
     }
   }
-
-  // Load members when workspaceId changes
-  useEffect(() => {
-    loadMembers()
-  }, [workspaceId])
 
   return {
     members,

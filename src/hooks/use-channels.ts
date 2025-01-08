@@ -16,6 +16,44 @@ export function useChannels(workspaceId: string | undefined) {
     if (workspaceId && profile?.id) {
       console.log('Loading channels for workspace:', workspaceId)
       loadChannels()
+
+      // Set up realtime subscriptions
+      const channelsChannel = supabase
+        .channel(`channels:${workspaceId}`)
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'channels',
+            filter: `workspace_id=eq.${workspaceId}`,
+          },
+          async () => {
+            await loadChannels()
+          }
+        )
+        .subscribe()
+
+      const membershipsChannel = supabase
+        .channel(`channel_memberships:${workspaceId}`)
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'channel_memberships',
+          },
+          async () => {
+            await loadChannels()
+          }
+        )
+        .subscribe()
+
+      // Cleanup subscriptions
+      return () => {
+        channelsChannel.unsubscribe()
+        membershipsChannel.unsubscribe()
+      }
     } else {
       console.log('No workspace ID or profile available')
       setChannels([])
