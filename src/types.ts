@@ -7,6 +7,10 @@ export interface Message {
   reply_count: number
   created_at: string
   updated_at: string
+  attachments?: Array<{
+    url: string
+    filename: string
+  }>
   user?: {
     id: string
     username: string | null

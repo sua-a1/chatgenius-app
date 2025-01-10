@@ -43,13 +43,15 @@ interface UserProfileDisplayProps {
   children: React.ReactNode
   onStartDM?: (userId: string) => void
   showDMButton?: boolean
+  onClick?: (e: React.MouseEvent) => void
 }
 
-export function UserProfileDisplay({ user, children, onStartDM, showDMButton = true }: UserProfileDisplayProps) {
+export function UserProfileDisplay({ user, children, onStartDM, showDMButton = true, onClick }: UserProfileDisplayProps) {
   const { userStatuses } = useUserStatus()
   const { toast } = useToast()
   const userStatus = userStatuses.get(user.id)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
+  const [isLoading, setIsLoading] = useState(true)
   const [displayUser, setDisplayUser] = useState<DisplayUser>({
     id: user.id,
     username: user.username,
@@ -59,42 +61,43 @@ export function UserProfileDisplay({ user, children, onStartDM, showDMButton = t
     created_at: user.created_at || new Date().toISOString()
   })
 
-  // Fetch complete user information if not provided
+  // Always fetch complete user information
   useEffect(() => {
     const fetchUserInfo = async () => {
-      if (!user.email || !user.created_at) {
-        try {
-          const { data, error } = await supabase
-            .from('users')
-            .select('id, username, full_name, email, avatar_url, created_at')
-            .eq('id', user.id)
-            .single()
+      setIsLoading(true)
+      try {
+        const { data, error } = await supabase
+          .from('users')
+          .select('id, username, full_name, email, avatar_url, created_at')
+          .eq('id', user.id)
+          .single()
 
-          if (error) throw error
+        if (error) throw error
 
-          if (data) {
-            setDisplayUser({
-              id: data.id,
-              username: data.username,
-              full_name: data.full_name || null,
-              avatar_url: data.avatar_url || null,
-              email: data.email || '',
-              created_at: data.created_at
-            })
-          }
-        } catch (error) {
-          console.error('Error fetching user details:', error)
-          toast({
-            variant: 'destructive',
-            title: 'Error loading user details',
-            description: 'Could not load complete user information.',
+        if (data) {
+          setDisplayUser({
+            id: data.id,
+            username: data.username,
+            full_name: data.full_name || null,
+            avatar_url: data.avatar_url || null,
+            email: data.email || '',
+            created_at: data.created_at
           })
         }
+      } catch (error) {
+        console.error('Error fetching user details:', error)
+        toast({
+          variant: 'destructive',
+          title: 'Error loading user details',
+          description: 'Could not load complete user information.',
+        })
+      } finally {
+        setIsLoading(false)
       }
     }
 
     fetchUserInfo()
-  }, [user.id, user.email, user.created_at, toast])
+  }, [user.id, toast])
 
   // Listen for profile updates
   useEffect(() => {
@@ -119,20 +122,12 @@ export function UserProfileDisplay({ user, children, onStartDM, showDMButton = t
   const handleClick = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    setIsDialogOpen(true);
+    if (onClick) {
+      onClick(e);
+    } else {
+      setIsDialogOpen(true);
+    }
   };
-
-  // Update display user when prop changes
-  React.useEffect(() => {
-    setDisplayUser({
-      id: user.id,
-      username: user.username,
-      full_name: user.full_name || null,
-      avatar_url: user.avatar_url || null,
-      email: user.email || '',
-      created_at: user.created_at || new Date().toISOString()
-    })
-  }, [user])
 
   const Trigger = React.forwardRef<HTMLDivElement, React.HTMLProps<HTMLDivElement>>((props, ref) => (
     <div
@@ -159,7 +154,7 @@ export function UserProfileDisplay({ user, children, onStartDM, showDMButton = t
           avoidCollisions={true}
           sideOffset={5}
         >
-          <div className="flex items-center justify-between space-x-4">
+          <div className="flex items-center justify-between space-x-4 cursor-pointer" onClick={handleClick}>
             <div className="flex items-center space-x-3">
               <Avatar className="h-10 w-10" status={userStatus}>
                 <AvatarImage src={displayUser.avatar_url || undefined} />
@@ -205,68 +200,74 @@ export function UserProfileDisplay({ user, children, onStartDM, showDMButton = t
           <DialogHeader>
             <DialogTitle>User Profile</DialogTitle>
           </DialogHeader>
-          <div className="grid gap-6 py-4">
-            <div className="flex items-center gap-4">
-              <Avatar className="h-20 w-20" status={userStatus}>
-                <AvatarImage src={displayUser.avatar_url || undefined} />
-                <AvatarFallback className="text-2xl">
-                  {displayUser.full_name?.[0] || displayUser.username[0].toUpperCase()}
-                </AvatarFallback>
-              </Avatar>
-              <div className="space-y-1">
-                <h2 className="text-2xl font-semibold">{displayUser.full_name || displayUser.username}</h2>
-                {displayUser.full_name && (
-                  <p className="text-sm text-muted-foreground">@{displayUser.username}</p>
+          {isLoading ? (
+            <div className="py-8 text-center text-muted-foreground">
+              Loading user information...
+            </div>
+          ) : (
+            <div className="grid gap-6 py-4">
+              <div className="flex items-center gap-4">
+                <Avatar className="h-20 w-20" status={userStatus}>
+                  <AvatarImage src={displayUser.avatar_url || undefined} />
+                  <AvatarFallback className="text-2xl">
+                    {displayUser.full_name?.[0] || displayUser.username[0].toUpperCase()}
+                  </AvatarFallback>
+                </Avatar>
+                <div className="space-y-1">
+                  <h2 className="text-2xl font-semibold">{displayUser.full_name || displayUser.username}</h2>
+                  {displayUser.full_name && (
+                    <p className="text-sm text-muted-foreground">@{displayUser.username}</p>
+                  )}
+                  <div className="flex items-center gap-2">
+                    <span className={`h-2 w-2 rounded-full ${
+                      userStatus === 'online' ? 'bg-green-500' :
+                      userStatus === 'away' ? 'bg-yellow-500' :
+                      userStatus === 'busy' ? 'bg-red-500' :
+                      'bg-gray-500'
+                    }`} />
+                    <p className="text-sm text-muted-foreground">
+                      {userStatus ? userStatus.charAt(0).toUpperCase() + userStatus.slice(1) : 'Offline'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                {displayUser.email && (
+                  <div>
+                    <h4 className="text-sm font-medium text-muted-foreground mb-1">Email</h4>
+                    <p className="text-sm">{displayUser.email}</p>
+                  </div>
                 )}
-                <div className="flex items-center gap-2">
-                  <span className={`h-2 w-2 rounded-full ${
-                    userStatus === 'online' ? 'bg-green-500' :
-                    userStatus === 'away' ? 'bg-yellow-500' :
-                    userStatus === 'busy' ? 'bg-red-500' :
-                    'bg-gray-500'
-                  }`} />
-                  <p className="text-sm text-muted-foreground">
-                    {userStatus ? userStatus.charAt(0).toUpperCase() + userStatus.slice(1) : 'Offline'}
-                  </p>
-                </div>
+
+                {displayUser.created_at && (
+                  <div>
+                    <h4 className="text-sm font-medium text-muted-foreground mb-1">Member Since</h4>
+                    <p className="text-sm">
+                      {formatDistanceToNow(new Date(displayUser.created_at), { addSuffix: true })}
+                    </p>
+                  </div>
+                )}
               </div>
-            </div>
 
-            <div className="space-y-4">
-              {displayUser.email && (
-                <div>
-                  <h4 className="text-sm font-medium text-muted-foreground mb-1">Email</h4>
-                  <p className="text-sm">{displayUser.email}</p>
-                </div>
-              )}
-
-              {displayUser.created_at && (
-                <div>
-                  <h4 className="text-sm font-medium text-muted-foreground mb-1">Member Since</h4>
-                  <p className="text-sm">
-                    {formatDistanceToNow(new Date(displayUser.created_at), { addSuffix: true })}
-                  </p>
+              {showDMButton && onStartDM && (
+                <div className="flex justify-end">
+                  <Button
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      onStartDM(displayUser.id);
+                      setIsDialogOpen(false);
+                    }}
+                    className="w-full sm:w-auto"
+                  >
+                    <MessageSquare className="h-4 w-4 mr-2" />
+                    Send Message
+                  </Button>
                 </div>
               )}
             </div>
-
-            {showDMButton && onStartDM && (
-              <div className="flex justify-end">
-                <Button
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    onStartDM(displayUser.id);
-                    setIsDialogOpen(false);
-                  }}
-                  className="w-full sm:w-auto"
-                >
-                  <MessageSquare className="h-4 w-4 mr-2" />
-                  Send Message
-                </Button>
-              </div>
-            )}
-          </div>
+          )}
         </DialogContent>
       </Dialog>
     </>

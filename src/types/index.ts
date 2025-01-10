@@ -62,6 +62,10 @@ export interface User {
       avatar_url: string | null;
     };
     reactions?: MessageReaction[];
+    attachments?: Array<{
+      url: string;
+      filename: string;
+    }>;
   }
   
   export interface MessageReaction {

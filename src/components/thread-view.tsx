@@ -14,16 +14,19 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { supabase } from '@/lib/supabase'
 import { UserProfileDisplay } from './user-profile-display'
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar'
+import { FilePreview } from '@/components/ui/file-preview'
+import { MessageComposer } from '@/components/message-composer'
 
 interface ThreadMessage extends Message {
   threadDepth: number
+  workspace_id: string
 }
 
 interface ThreadViewProps {
-  parentMessage: Message
+  parentMessage: Message & { workspace_id: string }
   onClose: () => void
   sendMessage: (content: string, replyTo: string) => Promise<boolean>
-  loadThreadMessages: (parentMessageId: string) => Promise<ThreadMessage[]>
+  loadThreadMessages: (messageId: string) => Promise<Message[]>
   updateMessage: (messageId: string, content: string) => Promise<boolean>
   deleteMessage: (messageId: string) => Promise<boolean>
 }
@@ -31,15 +34,14 @@ interface ThreadViewProps {
 export default function ThreadView({ 
   parentMessage, 
   onClose, 
-  sendMessage, 
+  sendMessage: sendMessageProp, 
   loadThreadMessages,
   updateMessage,
-  deleteMessage 
+  deleteMessage
 }: ThreadViewProps) {
   const { profile } = useAuth()
   const { userStatuses } = useUserStatus()
   const [messages, setMessages] = useState<ThreadMessage[]>([])
-  const [newMessage, setNewMessage] = useState('')
   const [editingMessage, setEditingMessage] = useState<string | null>(null)
   const [editContent, setEditContent] = useState('')
   const [threadStack, setThreadStack] = useState<ThreadMessage[]>([{
@@ -58,7 +60,11 @@ export default function ThreadView({
       
       // First, create a map of messages for easy lookup
       const messageMap = new Map<string, ThreadMessage>()
-      threadMessages.forEach(message => messageMap.set(message.id, { ...message, threadDepth: 0 }))
+      threadMessages.forEach(message => messageMap.set(message.id, { 
+        ...message, 
+        threadDepth: 0,
+        workspace_id: parentMessage.workspace_id
+      } as ThreadMessage))
 
       // Then calculate depths by following reply chains
       threadMessages.forEach(message => {
@@ -79,7 +85,7 @@ export default function ThreadView({
       setMessages(Array.from(messageMap.values()))
     }
     loadMessages()
-  }, [currentThreadParent.id, loadThreadMessages])
+  }, [currentThreadParent.id, loadThreadMessages, parentMessage.workspace_id])
 
   // Reset thread stack when parent message changes
   useEffect(() => {
@@ -88,32 +94,10 @@ export default function ThreadView({
       threadDepth: 0
     }])
     setMessages([])
-    setNewMessage('')
     setEditingMessage(null)
     setEditContent('')
     setReplyingTo(null)
   }, [parentMessage.id])
-
-  const handleSendMessage = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!newMessage.trim()) return
-
-    const replyToId = replyingTo?.id || currentThreadParent.id
-    const success = await sendMessage(newMessage.trim(), replyToId)
-    if (success) {
-      setNewMessage('')
-      setReplyingTo(null)
-      const threadMessages = await loadThreadMessages(currentThreadParent.id)
-      // Set thread depth based on parent's depth
-      const messagesWithDepth = threadMessages.map(message => ({
-        ...message,
-        threadDepth: message.reply_to === parentMessage.id ? 0 : 
-          threadStack.findIndex(m => m.id === message.reply_to) + 1
-      }))
-      setMessages(messagesWithDepth)
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-    }
-  }
 
   const handleStartEdit = (messageId: string, content: string) => {
     setEditingMessage(messageId)
@@ -125,7 +109,12 @@ export default function ThreadView({
     const success = await updateMessage(messageId, editContent)
     if (success) {
       const threadMessages = await loadThreadMessages(currentThreadParent.id)
-      setMessages(threadMessages)
+      const messagesWithDepth = threadMessages.map(message => ({
+        ...message,
+        threadDepth: 0,
+        workspace_id: parentMessage.workspace_id
+      })) as ThreadMessage[]
+      setMessages(messagesWithDepth)
       setEditingMessage(null)
       setEditContent('')
     }
@@ -137,13 +126,7 @@ export default function ThreadView({
   }
 
   const handleReplyClick = (message: ThreadMessage) => {
-    // Set the message being replied to and focus the input
     setReplyingTo(message)
-    const input = document.querySelector('input[placeholder="Reply to thread..."]') as HTMLInputElement
-    if (input) {
-      input.focus()
-      setNewMessage('')
-    }
   }
 
   const handleShowReplies = (message: ThreadMessage) => {
@@ -214,6 +197,9 @@ export default function ThreadView({
             </UserProfileDisplay>
             <div className="pl-10">
               <p className="text-sm mb-2">{currentThreadParent.content}</p>
+              {currentThreadParent.attachments && currentThreadParent.attachments.length > 0 && (
+                <FilePreview attachments={currentThreadParent.attachments} />
+              )}
               <MessageReactions messageId={currentThreadParent.id} />
             </div>
           </div>
@@ -248,7 +234,7 @@ export default function ThreadView({
                 
                 // Then sort by creation date within the same level
                 if (aParentId === bParentId) {
-                return new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+                  return new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
                 }
 
                 // Keep replies close to their parents
@@ -259,129 +245,114 @@ export default function ThreadView({
                 }
                 return 0
               })
-              .map(message => {
-                // Calculate indentation by following the reply chain
-                let indentLevel = 0
-                let currentId = message.reply_to
-                let parentMessage = currentId ? messages.find(m => m.id === currentId) : null
-
-                while (parentMessage && currentId !== currentThreadParent.id) {
-                  indentLevel++
-                  currentId = parentMessage.reply_to
-                  parentMessage = currentId ? messages.find(m => m.id === currentId) : null
-                }
-
-    return (
-      <div 
-        key={message.id} 
-                    className={`flex flex-col space-y-2 ${
-                      indentLevel > 0 ? `ml-${indentLevel * 8} pl-4 border-l-2 border-l-muted` : ''
-                    }`}
+              .map(message => (
+                <div 
+                  key={message.id} 
+                  className={`flex flex-col space-y-2 ${message.threadDepth > 0 ? 'ml-6' : ''}`}
+                >
+                  <UserProfileDisplay
+                    user={{
+                      id: message.user?.id || '',
+                      username: message.user?.username || 'Unknown User',
+                      avatar_url: message.user?.avatar_url,
+                      created_at: message.created_at
+                    }}
+                    showDMButton={false}
                   >
-                    <UserProfileDisplay
-                      user={{
-                        id: message.user?.id || '',
-                        username: message.user?.username || 'Unknown User',
-                        avatar_url: message.user?.avatar_url,
-                        created_at: message.created_at
-                      }}
-                      showDMButton={false}
-                    >
-                      <div className="flex items-center space-x-2">
-                        <Avatar 
-                          className="h-8 w-8"
-                          status={userStatuses.get(message.user?.id || '')}
-                        >
-                          <AvatarImage src={message.user?.avatar_url || undefined} />
-                          <AvatarFallback>{message.user?.username?.[0] || '?'}</AvatarFallback>
-                        </Avatar>
-            <div className="flex items-baseline space-x-2">
-                          <span className="font-medium">{message.user?.username}</span>
-              <span className="text-xs text-muted-foreground">
-                {formatDistanceToNow(new Date(message.created_at), { addSuffix: true })}
-              </span>
-            </div>
+                    <div className="flex items-center space-x-2">
+                      <Avatar 
+                        className="h-8 w-8"
+                        status={userStatuses.get(message.user?.id || '')}
+                      >
+                        <AvatarImage src={message.user?.avatar_url || undefined} />
+                        <AvatarFallback>{message.user?.username?.[0] || '?'}</AvatarFallback>
+                      </Avatar>
+                      <div className="flex items-baseline space-x-2">
+                        <span className="font-medium">{message.user?.username}</span>
+                        <span className="text-xs text-muted-foreground">
+                          {formatDistanceToNow(new Date(message.created_at), { addSuffix: true })}
+                        </span>
                       </div>
-                    </UserProfileDisplay>
-                    <div className="pl-10">
-            {editingMessage === message.id ? (
-                        <div className="flex items-center space-x-2">
-                <Input
-                  value={editContent}
-                  onChange={e => setEditContent(e.target.value)}
-                  className="flex-1"
-                  autoFocus
-                  onKeyDown={e => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault()
-                      handleSaveEdit(message.id)
-                    } else if (e.key === 'Escape') {
-                      handleCancelEdit()
-                    }
-                  }}
-                />
-                  <Button size="sm" onClick={() => handleSaveEdit(message.id)}>Save</Button>
-                  <Button size="sm" variant="ghost" onClick={handleCancelEdit}>Cancel</Button>
-              </div>
-            ) : (
-                        <div className="group">
-                          <div className="flex items-start justify-between">
-                            <p className="text-sm">{message.content}</p>
-                            <div className="flex items-center space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                                className="h-6 w-6 p-0"
-                                onClick={() => handleReplyClick(message)}
-                    >
-                      <ArrowUpRight className="h-4 w-4" />
-                      </Button>
-                    {message.user_id === profile?.id && (
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
-                            <MoreVertical className="h-4 w-4" />
+                    </div>
+                  </UserProfileDisplay>
+                  <div className="pl-10">
+                    {editingMessage === message.id ? (
+                      <div className="flex items-center space-x-2">
+                        <Input
+                          value={editContent}
+                          onChange={(e) => setEditContent(e.target.value)}
+                          className="flex-1"
+                        />
+                        <Button size="sm" onClick={() => handleSaveEdit(message.id)}>Save</Button>
+                        <Button size="sm" variant="ghost" onClick={handleCancelEdit}>Cancel</Button>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="flex items-center justify-between group">
+                          <p className="text-sm mb-2">{message.content}</p>
+                          {message.user?.id === profile?.id && (
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8 opacity-0 group-hover:opacity-100"
+                                >
+                                  <MoreVertical className="h-4 w-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem onClick={() => handleStartEdit(message.id, message.content)}>
+                                  <Edit className="h-4 w-4 mr-2" />
+                                  Edit
+                                </DropdownMenuItem>
+                                <DropdownMenuItem 
+                                  className="text-destructive"
+                                  onClick={() => deleteMessage(message.id)}
+                                >
+                                  <Trash className="h-4 w-4 mr-2" />
+                                  Delete
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          )}
+                        </div>
+                        {message.attachments && message.attachments.length > 0 && (
+                          <FilePreview attachments={message.attachments} />
+                        )}
+                        <div className="flex items-center space-x-4 mt-2">
+                          <MessageReactions messageId={message.id} />
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-6 px-2 text-xs text-muted-foreground hover:text-foreground"
+                            onClick={() => handleReplyClick(message)}
+                          >
+                            Reply
                           </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                                    <DropdownMenuItem onClick={() => handleStartEdit(message.id, message.content)}>
-                            <Edit className="h-4 w-4 mr-2" />
-                            Edit
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => deleteMessage(message.id)}>
-                            <Trash className="h-4 w-4 mr-2" />
-                            Delete
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
+                          {message.reply_count > 0 && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-6 px-2 text-xs text-muted-foreground hover:text-foreground"
+                              onClick={() => handleShowReplies(message)}
+                            >
+                              {message.reply_count} {message.reply_count === 1 ? 'reply' : 'replies'} <ArrowUpRight className="h-3 w-3 ml-1" />
+                            </Button>
+                          )}
+                        </div>
+                      </>
                     )}
                   </div>
                 </div>
-                          <div className="mt-1">
-                            <MessageReactions messageId={message.id} />
-                            {message.reply_count > 0 && message.threadDepth >= 2 && (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="text-xs text-muted-foreground hover:text-foreground mt-1"
-                                onClick={() => handleShowReplies(message)}
-                              >
-                                Show replies ({message.reply_count})
-                              </Button>
-            )}
-          </div>
-                        </div>
-                      )}
-        </div>
-      </div>
-    )
-              })}
+              ))}
             <div ref={messagesEndRef} />
           </div>
         </div>
       </ScrollArea>
 
-      <form onSubmit={handleSendMessage} className="border-t p-4">
+      {/* Message Input */}
+      <div className="border-t p-4">
         {replyingTo && (
           <div className="flex items-center justify-between text-xs text-muted-foreground mb-2">
             <span>
@@ -393,22 +364,37 @@ export default function ThreadView({
               className="h-6 px-2 hover:text-foreground"
               onClick={() => setReplyingTo(null)}
             >
-                Cancel
-              </Button>
-            </div>
-          )}
-        <div className="flex space-x-2">
-          <Input
-            value={newMessage}
-            onChange={e => setNewMessage(e.target.value)}
-            placeholder={replyingTo ? `Reply to ${replyingTo.user?.username}...` : "Reply to thread..."}
-            className="flex-1"
-          />
-          <Button type="submit" disabled={!newMessage.trim()}>
-              Reply
+              Cancel
             </Button>
+          </div>
+        )}
+        <div className="flex space-x-2">
+          <MessageComposer
+            onSendMessage={async (content, attachments) => {
+              const success = await sendMessageProp(
+                content, 
+                replyingTo ? replyingTo.id : parentMessage.id
+              )
+              if (success) {
+                setReplyingTo(null)
+                const threadMessages = await loadThreadMessages(currentThreadParent.id)
+                const messagesWithDepth = threadMessages.map(message => ({
+                  ...message,
+                  threadDepth: 0,
+                  workspace_id: parentMessage.workspace_id
+                })) as ThreadMessage[]
+                setMessages(messagesWithDepth)
+                return true
+              }
+              return false
+            }}
+            placeholder={replyingTo ? `Reply to ${replyingTo.user?.username}...` : "Reply to thread..."}
+            workspaceId={parentMessage.workspace_id}
+            channelId={parentMessage.channel_id}
+            userId={profile?.id || ''}
+          />
         </div>
-      </form>
+      </div>
     </div>
   )
 } 

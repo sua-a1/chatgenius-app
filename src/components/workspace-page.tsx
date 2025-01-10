@@ -210,21 +210,18 @@ export default function WorkspacePage({ workspace, workspaces, onOpenProfileSett
                     )}
                     {!isLoadingDMs && recentChats.length > 0 && (
                       <>
-                        {recentChats.map((chat) => (
-                          <UserProfileDisplay
-                            key={chat.user_id}
-                            user={{
-                              id: chat.user_id,
-                              username: chat.username,
-                              avatar_url: chat.avatar_url,
-                              created_at: chat.last_message_at
-                            }}
-                            onStartDM={() => onSelectDM(chat.user_id)}
-                          >
+                        {recentChats.map((chat) => {
+                          const handleDMClick = () => {
+                            console.log('Opening DM with user:', chat.user_id);
+                            onSelectDM(chat.user_id);
+                          };
+
+                          return (
+                            <div key={chat.user_id} className="flex items-center w-full gap-1">
                             <Button
                               variant="ghost"
-                              className="w-full justify-start px-2"
-                              onClick={() => onSelectDM(chat.user_id)}
+                                className="flex-1 justify-start px-2"
+                                onClick={handleDMClick}
                             >
                               <div className="flex items-center space-x-2 min-w-0">
                                 <Avatar 
@@ -237,8 +234,18 @@ export default function WorkspacePage({ workspace, workspaces, onOpenProfileSett
                                 <span className="truncate">{chat.username}</span>
                               </div>
                             </Button>
-                          </UserProfileDisplay>
-                        ))}
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 shrink-0"
+                                onClick={handleDMClick}
+                                title="Open chat"
+                              >
+                                <MessageSquare className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          );
+                        })}
                       </>
                     )}
                     {showNewDM ? (

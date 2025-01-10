@@ -36,6 +36,10 @@ interface Message {
     avatar_url: string | null
   }
   reactions: MessageReaction[]
+  attachments?: Array<{
+    url: string
+    filename: string
+  }>
 }
 
 interface DatabaseResponse {
@@ -47,6 +51,10 @@ interface DatabaseResponse {
   channel_id: string
   reply_to: string | null
   reply_count: number
+  attachments: Array<{
+    url: string
+    filename: string
+  }> | null
   user: {
     id: string
     username: string | null
@@ -108,6 +116,7 @@ export function useChannelMessages(workspaceId: string | undefined, selectedChan
           channel_id,
           reply_to,
           reply_count,
+          attachments,
           user:users!inner(id, username, avatar_url),
           message_reactions_with_users(*)
         `)
@@ -128,6 +137,7 @@ export function useChannelMessages(workspaceId: string | undefined, selectedChan
           channel_id: message.channel_id,
           reply_to: message.reply_to,
           reply_count: message.reply_count,
+          attachments: message.attachments || [],
           user: {
             id: userData.id,
             username: userData.username,
@@ -189,6 +199,7 @@ export function useChannelMessages(workspaceId: string | undefined, selectedChan
               channel_id: payload.new.channel_id,
               reply_to: payload.new.reply_to,
               reply_count: payload.new.reply_count,
+              attachments: payload.new.attachments || [],
               user: payload.new.user || {
                 id: payload.new.user_id,
                 username: 'Loading...',
@@ -248,28 +259,41 @@ export function useChannelMessages(workspaceId: string | undefined, selectedChan
     }
   }, [workspaceId, selectedChannelId, profile?.id, loadMessages, loadSelectedChannel])
 
-  const sendMessage = async (content: string, replyTo?: string) => {
-    if (!profile?.id || !selectedChannelId) return false
+  const sendMessage = async (content: string, attachmentsOrReplyTo?: string[] | string) => {
+    if (!profile?.id || !selectedChannelId || !workspaceId) return false
 
     try {
-      console.log('[DEBUG] Sending message:', { content, channelId: selectedChannelId, replyTo })
-      
-      // Send as a normal message or thread reply
-      const { error } = await supabase
-        .from('messages')
-        .insert([{
-          content,
-          channel_id: selectedChannelId,
-          user_id: profile.id,
-          reply_to: replyTo || null,
-        }])
+      // If attachmentsOrReplyTo is an array, it's attachments. If it's a string, it's a replyTo ID
+      const isAttachments = Array.isArray(attachmentsOrReplyTo)
+      const attachments = isAttachments ? attachmentsOrReplyTo : undefined
+      const replyTo = !isAttachments ? attachmentsOrReplyTo : undefined
 
-      if (error) throw error
+      // Use RPC function for messages with attachments
+      if (attachments) {
+        const { data, error } = await supabase.rpc('send_message', {
+          p_content: content,
+          p_channel_id: selectedChannelId,
+          p_attachments: attachments.join(',')
+        })
 
-      await loadMessages() // Force reload messages after sending
+        if (error) throw error
+      } else {
+        // Use regular insert for thread replies
+        const { error } = await supabase
+          .from('messages')
+          .insert([{
+            content,
+            channel_id: selectedChannelId,
+            user_id: profile.id,
+            reply_to: replyTo || null,
+          }])
+
+        if (error) throw error
+      }
+
       return true
     } catch (error) {
-      console.error('[DEBUG] Error sending message:', error)
+      console.error('Error sending message:', error)
       toast({
         variant: 'destructive',
         title: 'Error sending message',
@@ -374,7 +398,8 @@ export function useChannelMessages(workspaceId: string | undefined, selectedChan
       return uniqueMessages.map(message => ({
         ...message,
         user: message.user,
-        reactions: message.message_reactions_with_users || []
+        reactions: message.message_reactions_with_users || [],
+        attachments: message.attachments || []
       }))
     } catch (error) {
       console.error('Error loading thread messages:', error)

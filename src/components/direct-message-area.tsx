@@ -17,6 +17,8 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { UserProfileDisplay } from './user-profile-display'
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar'
+import { FileUpload } from './ui/file-upload'
+import { FilePreview } from './ui/file-preview'
 
 interface DirectMessageAreaProps {
   workspace: {
@@ -34,6 +36,7 @@ export default function DirectMessageArea({ workspace, selectedUserId }: DirectM
   const lastMessageRef = useRef<HTMLDivElement>(null)
   const isInitialLoad = useRef(true)
   const lastMessageId = useRef<string | null>(null)
+  const [selectedFiles, setSelectedFiles] = useState<string[]>([])
 
   // Scroll to bottom only on initial load and new messages from the current user
   useEffect(() => {
@@ -64,13 +67,16 @@ export default function DirectMessageArea({ workspace, selectedUserId }: DirectM
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!newMessage.trim() || !selectedUserId || !workspace) return
+    if (!newMessage.trim() && selectedFiles.length === 0) return
+    if (!selectedUserId || !workspace) return
 
     const messageContent = newMessage.trim()
     setNewMessage('') // Clear input immediately
-    const success = await sendMessage(messageContent)
+    const success = await sendMessage(messageContent, selectedFiles)
     if (!success) {
       setNewMessage(messageContent) // Restore message if send failed
+    } else {
+      setSelectedFiles([]) // Clear files after successful send
     }
   }
 
@@ -223,6 +229,9 @@ export default function DirectMessageArea({ workspace, selectedUserId }: DirectM
                             </>
                           )}
                         </div>
+                        {message.attachments && message.attachments.length > 0 && (
+                          <FilePreview attachments={message.attachments} />
+                        )}
                         {!message.id.toString().startsWith('temp-') && (
                           <MessageReactions messageId={message.id} isDirect />
                         )}
@@ -237,16 +246,33 @@ export default function DirectMessageArea({ workspace, selectedUserId }: DirectM
       </ScrollArea>
 
       <form onSubmit={handleSendMessage} className="border-t p-4">
-        <div className="flex space-x-2">
-          <Input
-            value={newMessage}
-            onChange={e => setNewMessage(e.target.value)}
-            placeholder={`Message ${selectedUser?.username}`}
-            className="flex-1"
-          />
-          <Button type="submit" disabled={!newMessage.trim()}>
-            Send
-          </Button>
+        <div className="flex flex-col gap-2">
+          <div className="flex space-x-2">
+            <Input
+              value={newMessage}
+              onChange={e => setNewMessage(e.target.value)}
+              placeholder={`Message ${selectedUser?.username}`}
+              className="flex-1"
+            />
+            <Button type="submit" disabled={!newMessage.trim() && selectedFiles.length === 0}>
+              Send
+            </Button>
+          </div>
+          {selectedFiles.length > 0 && (
+            <FilePreview
+              attachments={selectedFiles.map(url => ({
+                url,
+                filename: url.split('/').pop() || 'unknown'
+              }))}
+            />
+          )}
+          {workspace && (
+            <FileUpload
+              workspaceId={workspace.id}
+              onFilesSelected={urls => setSelectedFiles(urls)}
+              disabled={!selectedUserId}
+            />
+          )}
         </div>
       </form>
     </div>

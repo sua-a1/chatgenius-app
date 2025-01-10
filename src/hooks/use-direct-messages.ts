@@ -31,6 +31,10 @@ interface DirectMessage {
   sender: DirectMessageUser
   receiver: DirectMessageUser
   reactions: DirectMessageReaction[]
+  attachments?: Array<{
+    url: string
+    filename: string
+  }>
 }
 
 interface DatabaseResponse {
@@ -40,6 +44,10 @@ interface DatabaseResponse {
   sender_id: string
   receiver_id: string
   workspace_id: string
+  attachments: Array<{
+    url: string
+    filename: string
+  }> | null
   sender: {
     id: string
     username: string
@@ -240,6 +248,7 @@ export function useDirectMessages(workspaceId: string | undefined, selectedUserI
                 sender_id,
                 receiver_id,
                 workspace_id,
+                attachments,
                 sender:users!direct_messages_sender_id_fkey(
                   id,
                   username,
@@ -277,7 +286,8 @@ export function useDirectMessages(workspaceId: string | undefined, selectedUserI
                 username: receiverData.username,
                 avatar_url: receiverData.avatar_url
               },
-              reactions: messageData.direct_message_reactions_with_users || []
+              reactions: messageData.direct_message_reactions_with_users || [],
+              attachments: messageData.attachments || []
             }
 
             // Only append if it's not already in the list
@@ -328,6 +338,7 @@ export function useDirectMessages(workspaceId: string | undefined, selectedUserI
                 sender_id,
                 receiver_id,
                 workspace_id,
+                attachments,
                 sender:users!direct_messages_sender_id_fkey(
                   id,
                   username,
@@ -365,7 +376,8 @@ export function useDirectMessages(workspaceId: string | undefined, selectedUserI
                 username: receiverData.username,
                 avatar_url: receiverData.avatar_url
               },
-              reactions: messageData.direct_message_reactions_with_users || []
+              reactions: messageData.direct_message_reactions_with_users || [],
+              attachments: messageData.attachments || []
             }
 
             // Update the message in place
@@ -486,6 +498,7 @@ export function useDirectMessages(workspaceId: string | undefined, selectedUserI
           sender_id,
           receiver_id,
           workspace_id,
+          attachments,
           sender:users!direct_messages_sender_id_fkey(
             id,
             username,
@@ -531,7 +544,8 @@ export function useDirectMessages(workspaceId: string | undefined, selectedUserI
           username: message.receiver.username,
           avatar_url: message.receiver.avatar_url
         },
-        reactions: message.direct_message_reactions_with_users || []
+        reactions: message.direct_message_reactions_with_users || [],
+        attachments: message.attachments || []
       }))
 
       setMessages(newMessages)
@@ -547,33 +561,29 @@ export function useDirectMessages(workspaceId: string | undefined, selectedUserI
     }
   }
 
-  const sendMessage = async (content: string) => {
+  const sendMessage = async (content: string, attachments?: string[]) => {
     if (!profile?.id || !selectedUserId || !workspaceId) return false
 
     try {
       console.log('DM Hook: Sending message:', { content, receiverId: selectedUserId })
-      const { data, error: messageError } = await supabase
-        .from('direct_messages')
-        .insert([{
-          message: content,
-          workspace_id: workspaceId,
-          sender_id: profile.id,
-          receiver_id: selectedUserId,
-        }])
-        .select()
-        .single()
+      const { data, error } = await supabase.rpc('send_direct_message', {
+        p_content: content,
+        p_receiver_id: selectedUserId,
+        p_workspace_id: workspaceId,
+        p_attachments: attachments ? attachments.join(',') : null
+      })
 
-      if (messageError) throw messageError
+      if (error) throw error
 
       // Optimistically add the message to the UI and track its ID
       if (data) {
-        sentMessageIds.current.add(data.id) // Track this message ID
+        sentMessageIds.current.add(data)
         const newMessage: DirectMessage = {
-          id: data.id,
-          content: data.message,
-          created_at: data.created_at,
-          sender_id: data.sender_id,
-          receiver_id: data.receiver_id,
+          id: data,
+          content: content,
+          created_at: new Date().toISOString(),
+          sender_id: profile.id,
+          receiver_id: selectedUserId,
           sender: {
             id: profile.id,
             username: profile.username || 'Unknown',
@@ -584,7 +594,11 @@ export function useDirectMessages(workspaceId: string | undefined, selectedUserI
             username: 'Unknown',
             avatar_url: null
           },
-          reactions: []
+          reactions: [],
+          attachments: attachments ? attachments.map(url => ({
+            url,
+            filename: url.split('/').pop() || 'unknown'
+          })) : []
         }
         setMessages(prev => [...prev, newMessage])
       }
