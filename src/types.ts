@@ -42,4 +42,12 @@ export interface ThreadMessageResponse {
   updated_at: string
   user_username: string | null
   user_avatar_url: string | null
+}
+
+export interface Workspace {
+  id: string
+  name: string
+  owner_id: string
+  created_at: string
+  updated_at: string
 } 

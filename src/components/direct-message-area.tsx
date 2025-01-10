@@ -15,6 +15,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { UserProfileDisplay } from './user-profile-display'
+import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar'
 
 interface DirectMessageAreaProps {
   workspace: {
@@ -87,6 +89,11 @@ export default function DirectMessageArea({ workspace, selectedUserId }: DirectM
     setEditingMessage(null)
   }
 
+  const handleStartDM = (userId: string) => {
+    // In DM area, we might want to handle this differently or disable it
+    console.log('Start DM with user:', userId)
+  }
+
   if (!workspace || !selectedUserId) {
     return (
       <div className="flex items-center justify-center h-full text-muted-foreground">
@@ -98,12 +105,20 @@ export default function DirectMessageArea({ workspace, selectedUserId }: DirectM
   return (
     <div className="flex flex-col h-full">
       <div className="border-b px-4 py-2">
-        <div className="flex items-center space-x-2">
-          <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
-            {selectedUser?.username[0].toUpperCase()}
-          </div>
-          <h2 className="font-semibold">{selectedUser?.username}</h2>
-        </div>
+        {selectedUser && (
+          <UserProfileDisplay
+            user={selectedUser}
+            showDMButton={false}
+          >
+            <div className="flex items-center space-x-2 cursor-pointer">
+              <Avatar className="h-8 w-8">
+                <AvatarImage src={selectedUser.avatar_url || undefined} />
+                <AvatarFallback>{selectedUser.username[0].toUpperCase()}</AvatarFallback>
+              </Avatar>
+              <h2 className="font-semibold">{selectedUser.username}</h2>
+            </div>
+          </UserProfileDisplay>
+        )}
       </div>
 
       <ScrollArea ref={scrollAreaRef} className="flex-1 px-4">
@@ -134,17 +149,23 @@ export default function DirectMessageArea({ workspace, selectedUserId }: DirectM
                 >
                   {shouldShowHeader && (
                     <div className="flex items-center space-x-2 mb-1">
-                      <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
-                        {message.sender.username[0].toUpperCase()}
-                      </div>
-                      <div>
-                        <div className="flex items-baseline space-x-2">
-                          <span className="font-semibold">{message.sender.username}</span>
-                          <span className="text-xs text-muted-foreground">
-                            {formatDistanceToNow(new Date(message.created_at), { addSuffix: true })}
-                          </span>
+                      <UserProfileDisplay
+                        user={message.sender}
+                        showDMButton={false}
+                      >
+                        <div className="flex items-center space-x-2">
+                          <Avatar className="h-10 w-10">
+                            <AvatarImage src={message.sender.avatar_url || undefined} />
+                            <AvatarFallback>{message.sender.username[0].toUpperCase()}</AvatarFallback>
+                          </Avatar>
+                          <div className="flex items-baseline space-x-2">
+                            <span className="font-semibold">{message.sender.username}</span>
+                            <span className="text-xs text-muted-foreground">
+                              {formatDistanceToNow(new Date(message.created_at), { addSuffix: true })}
+                            </span>
+                          </div>
                         </div>
-                      </div>
+                      </UserProfileDisplay>
                     </div>
                   )}
                   <div className="flex items-start pl-12">

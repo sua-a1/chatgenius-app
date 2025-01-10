@@ -4,11 +4,14 @@ import { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import { Avatar, AvatarFallback, AvatarImage, UserStatus } from '@/components/ui/avatar'
 import { Switch } from '@/components/ui/switch'
 import { useAuth } from '@/contexts/auth-context'
+import { useUserStatus } from '@/contexts/user-status-context'
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
 import { useToast } from '@/hooks/use-toast'
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
+import { Circle } from 'lucide-react'
 
 // Import UserProfile type from auth context
 import type { UserProfile } from '@/contexts/auth-context'
@@ -19,12 +22,22 @@ interface UserProfileSettingsProps {
 
 export function UserProfileSettings({ onClose }: UserProfileSettingsProps) {
   const { user, profile: initialProfile, refreshProfile } = useAuth()
+  const { userStatuses, updateMyStatus } = useUserStatus()
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
+  const [selectedStatus, setSelectedStatus] = useState<'auto' | UserStatus>('auto')
   const supabase = createClientComponentClient()
   const { toast } = useToast()
   
   const [profile, setProfile] = useState<UserProfile | null>(null)
+
+  // Initialize selected status
+  useEffect(() => {
+    if (user?.id) {
+      const currentStatus = userStatuses.get(user.id)
+      setSelectedStatus(currentStatus || 'auto')
+    }
+  }, [user?.id, userStatuses])
 
   useEffect(() => {
     const initializeProfile = () => {
@@ -40,11 +53,13 @@ export function UserProfileSettings({ onClose }: UserProfileSettingsProps) {
         avatar_url: initialProfile?.avatar_url || user.user_metadata?.avatar_url || null,
         full_name: initialProfile?.full_name || user.user_metadata?.full_name || null,
         notifications: initialProfile?.notifications || {
-      email: true,
-      push: false,
-    },
+          email: true,
+          push: false,
+        },
         theme: initialProfile?.theme || 'light',
-        updated_at: initialProfile?.updated_at || new Date().toISOString(),
+        status: initialProfile?.status,
+        created_at: initialProfile?.created_at || user.created_at || new Date().toISOString(),
+        updated_at: initialProfile?.updated_at || new Date().toISOString()
       }
 
       setProfile(defaultProfile)
@@ -70,23 +85,78 @@ export function UserProfileSettings({ onClose }: UserProfileSettingsProps) {
     }))
   }
 
-  const handleSave = async () => {
-    if (!user?.id || !profile) return
-
-    setIsSaving(true)
+  const handleStatusChange = async (value: string) => {
+    const status = value as 'auto' | UserStatus
+    console.log('Status change requested:', { value, status })
+    
     try {
-      // Update user metadata in auth
-      const { error: updateAuthError } = await supabase.auth.updateUser({
-        data: {
-          full_name: profile.full_name,
-          avatar_url: profile.avatar_url,
-        }
+      // Update the UI immediately
+      setSelectedStatus(status)
+      
+      // Update the status in the context
+      console.log('Updating status:', status)
+      await updateMyStatus(status)
+      
+      // Show success message
+      toast({
+        title: 'Status Updated',
+        description: status === 'auto' 
+          ? 'Automatic status tracking enabled.' 
+          : `Your status has been set to ${status}.`,
       })
+    } catch (error: any) {
+      console.error('Failed to update status:', error)
+      
+      // Show error message
+      toast({
+        title: 'Error',
+        description: 'Failed to update your status. Please try again.',
+        variant: 'destructive',
+      })
+      
+      // Revert the selected status
+      if (user?.id) {
+        setSelectedStatus(userStatuses.get(user.id) || 'auto')
+      }
+    }
+  }
 
-      if (updateAuthError) throw updateAuthError
+  // Check if there are any unsaved profile changes
+  const hasProfileChanges = () => {
+    if (!initialProfile || !profile) return false
+    
+    const profileNotifications = profile.notifications || { email: true, push: false }
+    const initialNotifications = initialProfile.notifications || { email: true, push: false }
+    
+    return (
+      profile.username !== initialProfile.username ||
+      profile.full_name !== initialProfile.full_name ||
+      profile.avatar_url !== initialProfile.avatar_url ||
+      profileNotifications.email !== initialNotifications.email ||
+      profileNotifications.push !== initialNotifications.push ||
+      profile.theme !== initialProfile.theme
+    )
+  }
 
-      // Update user profile in database
-      const { error: updateProfileError } = await supabase
+  const handleSave = async () => {
+    if (!user?.id || !profile) {
+      console.log('No user or profile, closing')
+      onClose()
+      return
+    }
+    
+    if (!hasProfileChanges()) {
+      console.log('No changes detected, closing')
+      onClose()
+      return
+    }
+
+    try {
+      setIsSaving(true)
+      console.log('Starting save operation...')
+
+      // Update user profile in database first
+      const { error: profileError } = await supabase
         .from('users')
         .update({
           username: profile.username,
@@ -98,25 +168,51 @@ export function UserProfileSettings({ onClose }: UserProfileSettingsProps) {
         })
         .eq('id', user.id)
 
-      if (updateProfileError) throw updateProfileError
+      if (profileError) {
+        console.error('Profile update error:', profileError)
+        throw profileError
+      }
 
-      // Refresh the profile in auth context
-      await refreshProfile()
+      console.log('Profile updated in database')
 
+      // Show success toast immediately after database update
       toast({
         title: 'Profile updated',
-        description: 'Your profile has been updated successfully.',
+        description: 'Your profile has been updated successfully. Page will reload to apply changes.',
       })
-      
+
+      // Close the dialog
       onClose()
+
+      // Force reload after a short delay
+      setTimeout(() => {
+        console.log('Reloading page...')
+        window.location.reload()
+      }, 1000)
+
+      // Update auth metadata in the background
+      supabase.auth.updateUser({
+        data: {
+          full_name: profile.full_name,
+          avatar_url: profile.avatar_url,
+        }
+      }).then(({ error }) => {
+        if (error) {
+          console.error('Auth update error:', error)
+        } else {
+          console.log('Auth metadata updated')
+        }
+      })
+
     } catch (error: any) {
+      console.error('Save operation failed:', error)
+      setIsSaving(false)
+      
       toast({
         title: 'Error updating profile',
-        description: error.message || 'Could not update profile',
+        description: error.message || 'Could not update profile. Please try again.',
         variant: 'destructive',
       })
-    } finally {
-      setIsSaving(false)
     }
   }
 
@@ -209,10 +305,42 @@ export function UserProfileSettings({ onClose }: UserProfileSettingsProps) {
             </Button>
           </div>
         </div>
-        <Button 
-          onClick={handleSave} 
-          disabled={isSaving}
-        >
+        <div>
+          <Label>Presence Status</Label>
+          <RadioGroup
+            value={selectedStatus}
+            onValueChange={handleStatusChange}
+            className="mt-2 space-y-2"
+          >
+            <div className="flex items-center space-x-2">
+              <RadioGroupItem value="auto" id="auto" />
+              <Label htmlFor="auto" className="flex items-center gap-2">
+                <Circle className="h-4 w-4 text-green-500 fill-current" />
+                Automatic
+                <span className="text-sm text-muted-foreground">(detects when you're active)</span>
+              </Label>
+            </div>
+            <div className="flex items-center space-x-2">
+              <RadioGroupItem value="away" id="away" />
+              <Label htmlFor="away" className="flex items-center gap-2">
+                <Circle className="h-4 w-4 text-yellow-500" />
+                Away
+              </Label>
+            </div>
+            <div className="flex items-center space-x-2">
+              <RadioGroupItem value="busy" id="busy" />
+              <Label htmlFor="busy" className="flex items-center gap-2">
+                <Circle className="h-4 w-4 text-red-500" />
+                Busy
+              </Label>
+            </div>
+          </RadioGroup>
+        </div>
+      </div>
+
+      <div className="flex justify-end space-x-2 mt-6">
+        <Button variant="outline" onClick={onClose}>Cancel</Button>
+        <Button onClick={handleSave} disabled={isSaving}>
           {isSaving ? 'Saving...' : 'Save Changes'}
         </Button>
       </div>

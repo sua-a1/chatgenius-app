@@ -16,6 +16,7 @@ export interface UserProfile {
     push: boolean
   }
   theme: 'light' | 'dark'
+  created_at: string
   updated_at: string
 }
 
@@ -49,9 +50,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const { data: { user }, error: userError } = await supabase.auth.getUser()
       
       if (userError) {
-        if (userError.message !== 'Auth session missing!') {
-          console.error('Error getting user:', userError)
-        }
+        console.error('Error getting user:', userError)
         setProfile(null)
         return
       }
@@ -67,36 +66,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Try to get existing profile
       const { data: profile, error } = await supabase
         .from('users')
-        .select('*')
+        .select(`
+          id,
+          username,
+          email,
+          avatar_url,
+          full_name,
+          notifications,
+          theme,
+          created_at,
+          updated_at
+        `)
         .eq('id', user.id)
         .single()
 
       if (error) {
         console.error('Error fetching profile:', error)
-        if (error.code === 'PGRST116') {  // Record not found
-          console.log('Creating new profile for user:', user.id)
-          // Create new profile
-          const { data: newProfile, error: createError } = await supabase
-            .from('users')
-            .insert([{
-              id: user.id,
-              email: user.email,
-              username: user.email?.split('@')[0] || `user_${user.id.slice(0, 8)}`,
-              notifications: { email: true, push: true },
-              theme: 'light',
-              updated_at: new Date().toISOString()
-            }])
-            .select()
-            .single()
-
-          if (createError) {
-            console.error('Error creating profile:', createError)
-            throw createError
-          }
-          console.log('Created new profile:', newProfile)
-          setProfile(newProfile)
-          return
-        }
         throw error
       }
 
@@ -104,7 +89,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setProfile(profile)
     } catch (error) {
       console.error('Error in refreshProfile:', error)
-      setProfile(null)
     }
   }
 
@@ -118,59 +102,69 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         // First try to get the session
         const { data: { session }, error: sessionError } = await supabase.auth.getSession()
-        
+
         if (sessionError) {
-          if (sessionError.message !== 'Auth session missing!') {
-            console.error('Error getting session:', sessionError)
-          }
+          console.error('Error getting session:', sessionError)
           return
         }
 
-        if (mounted) {
-          setUser(session?.user ?? null)
-          if (session?.user) {
-            await refreshProfile()
-          }
+        if (session?.user) {
+          setUser(session.user)
+          await refreshProfile()
         }
+
+        setIsInitialized(true)
+        setIsLoading(false)
       } catch (error) {
-        if (error instanceof Error && error.message !== 'Auth session missing!') {
-          console.error('Error in initAuth:', error)
-        }
-      } finally {
-        if (mounted) {
-          setIsLoading(false)
-          setIsInitialized(true)
-        }
+        console.error('Error in initAuth:', error)
+        setIsLoading(false)
       }
     }
 
     initAuth()
 
+    // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       console.log('Auth state changed:', event, session?.user?.id)
       
       if (mounted) {
-        setUser(session?.user ?? null)
         if (session?.user) {
+          setUser(session.user)
           await refreshProfile()
         } else {
+          setUser(null)
           setProfile(null)
-          // Only redirect to sign in if we're initialized and it's not an initial session check
-          if (isInitialized && event !== 'INITIAL_SESSION') {
-            router.push('/auth/signin')
-          }
         }
       }
     })
 
+    // Listen for profile updates
+    const handleProfileUpdate = (event: CustomEvent<UserProfile>) => {
+      console.log('Profile update event received:', event.detail)
+      if (mounted && event.detail) {
+        setProfile(event.detail)
+      }
+    }
+
+    window.addEventListener('profileUpdated', handleProfileUpdate as EventListener)
+
     return () => {
       mounted = false
       subscription.unsubscribe()
+      window.removeEventListener('profileUpdated', handleProfileUpdate as EventListener)
     }
   }, [])
 
+  const contextValue = {
+    user,
+    profile,
+    refreshProfile,
+    isLoading,
+    isInitialized,
+  }
+
   return (
-    <AuthContext.Provider value={{ user, profile, refreshProfile, isLoading, isInitialized }}>
+    <AuthContext.Provider value={contextValue}>
       {children}
     </AuthContext.Provider>
   )

@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useAuth } from '@/contexts/auth-context'
 import { supabase } from '@/lib/supabase'
 import { useToast } from './use-toast'
+import { useUserStatus } from '@/contexts/user-status-context'
 
 interface DirectMessageReaction {
   id: string
@@ -61,6 +62,7 @@ interface RecentChat {
 
 export function useDirectMessages(workspaceId: string | undefined, selectedUserId: string | null) {
   const { profile, isInitialized } = useAuth()
+  const { userStatuses } = useUserStatus()
   const { toast } = useToast()
   const [messages, setMessages] = useState<DirectMessage[]>([])
   const [recentChats, setRecentChats] = useState<RecentChat[]>([])
@@ -430,7 +432,7 @@ export function useDirectMessages(workspaceId: string | undefined, selectedUserI
       console.log('DM Hook: Loading selected user:', selectedUserId)
       const { data: user, error } = await supabase
         .from('users')
-        .select('id, username, avatar_url')
+        .select('id, username, full_name, email, avatar_url, created_at')
         .eq('id', selectedUserId)
         .single()
 
@@ -448,7 +450,10 @@ export function useDirectMessages(workspaceId: string | undefined, selectedUserI
       const selectedUser = {
         id: user.id,
         username: user.username,
-        avatar_url: user.avatar_url
+        full_name: user.full_name,
+        email: user.email,
+        avatar_url: user.avatar_url,
+        created_at: user.created_at
       }
       console.log('DM Hook: Processed selected user:', selectedUser)
       setSelectedUser(selectedUser)

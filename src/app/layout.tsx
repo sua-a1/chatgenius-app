@@ -1,6 +1,7 @@
 import { Inter } from 'next/font/google'
 import './globals.css'
 import { AuthProvider } from '@/contexts/auth-context'
+import { UserStatusProvider } from '@/contexts/user-status-context'
 import { ThemeProvider } from '@/components/theme-provider'
 import { Toaster } from '@/components/ui/toaster'
 
@@ -26,8 +27,10 @@ export default function RootLayout({
           disableTransitionOnChange
         >
           <AuthProvider>
-            {children}
-            <Toaster />
+            <UserStatusProvider>
+              {children}
+              <Toaster />
+            </UserStatusProvider>
           </AuthProvider>
         </ThemeProvider>
       </body>

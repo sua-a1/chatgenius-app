@@ -10,6 +10,9 @@ import { MessageReactions } from './message-reactions'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import ThreadView from './thread-view'
 import { Message } from '@/types'
+import { UserProfileDisplay } from './user-profile-display'
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import { useUserStatus } from '@/contexts/user-status-context'
 
 interface ChannelMessageAreaProps {
   workspace: {
@@ -26,6 +29,7 @@ export default function ChannelMessageArea({ workspace, selectedChannelId }: Cha
   const [editContent, setEditContent] = useState('')
   const [selectedThread, setSelectedThread] = useState<Message | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const { userStatuses } = useUserStatus()
 
   useEffect(() => {
     scrollToBottom()
@@ -93,19 +97,35 @@ export default function ChannelMessageArea({ workspace, selectedChannelId }: Cha
 
                 return (
                   <div key={message.id} className="group hover:bg-accent/5 -mx-4 px-4 py-1 rounded">
-                    {shouldShowHeader && (
+                    {shouldShowHeader && message.user && (
                       <div className="flex items-center space-x-2 mb-1">
-                        <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
-                          {message.user?.username?.[0].toUpperCase()}
-                        </div>
-                        <div>
-                          <div className="flex items-baseline space-x-2">
-                            <span className="font-semibold">{message.user?.username}</span>
-                            <span className="text-xs text-muted-foreground">
-                              {formatDistanceToNow(new Date(message.created_at), { addSuffix: true })}
-                            </span>
+                        <UserProfileDisplay
+                          user={{
+                            id: message.user.id,
+                            username: message.user.username || 'Unknown User',
+                            avatar_url: message.user.avatar_url,
+                            created_at: message.created_at
+                          }}
+                          onStartDM={() => console.log('Start DM with user:', message.user_id)}
+                        >
+                          <div className="flex items-center space-x-2">
+                            <Avatar 
+                              className="h-8 w-8 mt-[2px]"
+                              status={userStatuses.get(message.user?.id || '')}
+                            >
+                              <AvatarImage src={message.user?.avatar_url || undefined} />
+                              <AvatarFallback>
+                                {message.user?.username?.[0] || '?'}
+                              </AvatarFallback>
+                            </Avatar>
+                            <div className="flex items-baseline space-x-2">
+                              <span className="font-semibold">{message.user.username || 'Unknown User'}</span>
+                              <span className="text-xs text-muted-foreground">
+                                {formatDistanceToNow(new Date(message.created_at), { addSuffix: true })}
+                              </span>
+                            </div>
                           </div>
-                        </div>
+                        </UserProfileDisplay>
                       </div>
                     )}
                     <div className="flex items-start pl-12">

@@ -10,6 +10,8 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Edit, MoreVertical, Trash } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 import { MessageReactions } from './message-reactions'
+import { UserProfileDisplay } from './user-profile-display'
+import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar'
 
 interface ChatAreaProps {
   channel: {
@@ -64,6 +66,10 @@ export default function ChatArea({ channel }: ChatAreaProps) {
     setEditContent('')
   }
 
+  const handleStartDM = (userId: string) => {
+    console.log('Start DM with user:', userId)
+  }
+
   if (!channel) {
     return (
       <div className="flex items-center justify-center h-full text-muted-foreground">
@@ -101,17 +107,23 @@ export default function ChatArea({ channel }: ChatAreaProps) {
                 <div key={message.id} className="group hover:bg-accent/5 -mx-4 px-4 py-1 rounded">
                   {shouldShowHeader && (
                     <div className="flex items-center space-x-2 mb-1">
-                      <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
-                        {message.user.username[0].toUpperCase()}
-                      </div>
-                      <div>
-                        <div className="flex items-baseline space-x-2">
-                          <span className="font-semibold">{message.user.username}</span>
-                          <span className="text-xs text-muted-foreground">
-                            {formatDistanceToNow(new Date(message.created_at), { addSuffix: true })}
-                          </span>
+                      <UserProfileDisplay
+                        user={message.user}
+                        onStartDM={handleStartDM}
+                      >
+                        <div className="flex items-center space-x-2">
+                          <Avatar className="h-10 w-10">
+                            <AvatarImage src={message.user.avatar_url || undefined} />
+                            <AvatarFallback>{message.user.username[0].toUpperCase()}</AvatarFallback>
+                          </Avatar>
+                          <div className="flex items-baseline space-x-2">
+                            <span className="font-semibold">{message.user.username}</span>
+                            <span className="text-xs text-muted-foreground">
+                              {formatDistanceToNow(new Date(message.created_at), { addSuffix: true })}
+                            </span>
+                          </div>
                         </div>
-                      </div>
+                      </UserProfileDisplay>
                     </div>
                   )}
                   <div className="flex items-start pl-12">

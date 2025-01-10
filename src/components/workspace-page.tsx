@@ -9,12 +9,15 @@ import { Input } from '@/components/ui/input'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { PlusCircle, Settings, Hash, MessageSquare, UserPlus, X, ChevronLeft, ChevronRight, Users, Shield } from 'lucide-react'
 import { useAuth } from '@/contexts/auth-context'
+import { useUserStatus } from '@/contexts/user-status-context'
 import { SignOutButton } from './sign-out-button'
 import { useToast } from '@/hooks/use-toast'
 import { Workspace } from '@/types'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ChannelManagement } from './channel-management'
 import { AdminPanel } from './admin-panel'
+import { UserProfileDisplay } from './user-profile-display'
+import type { UserProfile } from '@/contexts/auth-context'
 
 interface WorkspacePageProps {
   workspace?: Workspace | null
@@ -27,6 +30,7 @@ interface WorkspacePageProps {
 
 export default function WorkspacePage({ workspace, workspaces, onOpenProfileSettings, onSelectChannel, onSelectDM, onTabChange }: WorkspacePageProps) {
   const { profile } = useAuth()
+  const { userStatuses } = useUserStatus()
   const [newChannelName, setNewChannelName] = useState('')
   const [showNewDM, setShowNewDM] = useState(false)
   const [newDMEmail, setNewDMEmail] = useState('')
@@ -35,6 +39,27 @@ export default function WorkspacePage({ workspace, workspaces, onOpenProfileSett
   const { toast } = useToast()
   const { channels, isLoading: isLoadingChannels, createChannel } = useChannels(workspace?.id)
   const { recentChats, isLoading: isLoadingDMs, refreshChats } = useDirectMessages(workspace?.id, null)
+  const [displayProfile, setDisplayProfile] = useState(profile)
+
+  // Update display profile when auth profile changes
+  useEffect(() => {
+    setDisplayProfile(profile)
+  }, [profile])
+
+  // Listen for profile updates
+  useEffect(() => {
+    const handleProfileUpdate = (event: CustomEvent<UserProfile>) => {
+      if (event.detail.id === profile?.id) {
+        console.log('Updating workspace profile display:', event.detail)
+        setDisplayProfile(event.detail)
+      }
+    }
+
+    window.addEventListener('profileUpdated', handleProfileUpdate as EventListener)
+    return () => {
+      window.removeEventListener('profileUpdated', handleProfileUpdate as EventListener)
+    }
+  }, [profile?.id])
 
   // Debug logs
   useEffect(() => {
@@ -186,19 +211,33 @@ export default function WorkspacePage({ workspace, workspaces, onOpenProfileSett
                     {!isLoadingDMs && recentChats.length > 0 && (
                       <>
                         {recentChats.map((chat) => (
-                          <Button
+                          <UserProfileDisplay
                             key={chat.user_id}
-                            variant="ghost"
-                            className="w-full justify-start px-2"
-                            onClick={() => onSelectDM(chat.user_id)}
+                            user={{
+                              id: chat.user_id,
+                              username: chat.username,
+                              avatar_url: chat.avatar_url,
+                              created_at: chat.last_message_at
+                            }}
+                            onStartDM={() => onSelectDM(chat.user_id)}
                           >
-                            <div className="flex items-center space-x-2 min-w-0">
-                              <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
-                                {chat.username ? chat.username[0].toUpperCase() : '?'}
+                            <Button
+                              variant="ghost"
+                              className="w-full justify-start px-2"
+                              onClick={() => onSelectDM(chat.user_id)}
+                            >
+                              <div className="flex items-center space-x-2 min-w-0">
+                                <Avatar 
+                                  className="h-6 w-6"
+                                  status={userStatuses.get(chat.user_id)}
+                                >
+                                  <AvatarImage src={chat.avatar_url || undefined} />
+                                  <AvatarFallback>{chat.username ? chat.username[0].toUpperCase() : '?'}</AvatarFallback>
+                                </Avatar>
+                                <span className="truncate">{chat.username}</span>
                               </div>
-                              <span className="truncate">{chat.username || 'Unknown User'}</span>
-                            </div>
-                          </Button>
+                            </Button>
+                          </UserProfileDisplay>
                         ))}
                       </>
                     )}
@@ -275,24 +314,41 @@ export default function WorkspacePage({ workspace, workspaces, onOpenProfileSett
       {/* User Profile Section - Fixed at bottom */}
       <div className="border-t border-gray-200 dark:border-gray-700 p-2">
         <div className={`flex ${isCollapsed ? 'justify-center' : 'flex-col items-center space-y-2'}`}>
-          <Avatar className="h-10 w-10">
-            <AvatarImage src={profile?.avatar_url || undefined} />
-            <AvatarFallback>{profile?.username?.[0] || profile?.email?.[0]}</AvatarFallback>
-          </Avatar>
-          {!isCollapsed && (
-            <>
-              <div className="flex flex-col items-center min-w-0">
-                <span className="text-sm font-medium truncate">{profile?.username}</span>
-                <span className="text-xs text-muted-foreground truncate">{profile?.email}</span>
-              </div>
-              <div className="flex items-center gap-1">
-                <Button variant="ghost" size="icon" onClick={onOpenProfileSettings}>
-                  <Settings className="h-4 w-4" />
-                </Button>
-                <SignOutButton />
-              </div>
-            </>
-          )}
+          <UserProfileDisplay
+            user={{
+              id: profile?.id || '',
+              username: profile?.username || '',
+              full_name: profile?.full_name || null,
+              avatar_url: profile?.avatar_url || null,
+              email: profile?.email,
+              created_at: profile?.created_at
+            }}
+            showDMButton={false}
+          >
+            <div className="flex flex-col items-center">
+              <Avatar 
+                className="h-10 w-10"
+                status={profile?.id ? userStatuses.get(profile.id) : undefined}
+              >
+                <AvatarImage src={profile?.avatar_url || undefined} />
+                <AvatarFallback>{profile?.username?.[0] || profile?.email?.[0]}</AvatarFallback>
+              </Avatar>
+              {!isCollapsed && (
+                <>
+                  <div className="flex flex-col items-center min-w-0">
+                    <span className="text-sm font-medium truncate">{profile?.full_name || profile?.username}</span>
+                    <span className="text-xs text-muted-foreground truncate">{profile?.email}</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <Button variant="ghost" size="icon" onClick={onOpenProfileSettings}>
+                      <Settings className="h-4 w-4" />
+                    </Button>
+                    <SignOutButton />
+                  </div>
+                </>
+              )}
+            </div>
+          </UserProfileDisplay>
         </div>
       </div>
     </div>

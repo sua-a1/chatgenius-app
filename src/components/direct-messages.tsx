@@ -17,6 +17,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
+import { useUserStatus } from '@/contexts/user-status-context'
+import { cn } from '@/lib/utils'
 
 interface DirectMessagesProps {
   workspaceId: string
@@ -29,6 +31,7 @@ export function DirectMessages({ workspaceId, selectedUserId, onSelectUser }: Di
   const [messageToDelete, setMessageToDelete] = useState<string | null>(null)
   const { messages, recentChats, isLoading, sendMessage, deleteMessage } = useDirectMessages(workspaceId, selectedUserId)
   const { profile } = useAuth()
+  const { userStatuses } = useUserStatus()
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   useLayoutEffect(() => {
@@ -71,7 +74,10 @@ export function DirectMessages({ workspaceId, selectedUserId, onSelectUser }: Di
                   selectedUserId === chat.user_id ? 'bg-gray-100 dark:bg-gray-800' : ''
                 }`}
               >
-                <Avatar className="h-8 w-8">
+                <Avatar 
+                  className="h-8 w-8"
+                  status={userStatuses.get(chat.user_id)}
+                >
                   <AvatarImage src={chat.avatar_url || undefined} />
                   <AvatarFallback>{chat.username[0].toUpperCase()}</AvatarFallback>
                 </Avatar>
@@ -102,7 +108,10 @@ export function DirectMessages({ workspaceId, selectedUserId, onSelectUser }: Di
                         message.sender_id === selectedUserId ? 'flex-row' : 'flex-row-reverse space-x-reverse'
                       }`}
                     >
-                      <Avatar className="h-8 w-8 mt-1">
+                      <Avatar 
+                        className="h-8 w-8 mt-1"
+                        status={userStatuses.get(message.sender_id)}
+                      >
                         <AvatarImage src={message.sender.avatar_url || undefined} />
                         <AvatarFallback>{message.sender.username[0].toUpperCase()}</AvatarFallback>
                       </Avatar>

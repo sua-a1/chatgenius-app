@@ -103,38 +103,23 @@ export function useWorkspaces() {
     if (!profile?.id) return null
 
     try {
-      // Start a Supabase transaction
+      // Call the function to create workspace and membership atomically
+      const { data: workspaceId, error: functionError } = await supabase
+        .rpc('create_workspace_with_membership', {
+          workspace_name: name,
+          owner_id: profile.id
+        })
+
+      if (functionError) throw functionError
+
+      // Get the created workspace data
       const { data: workspace, error: workspaceError } = await supabase
         .from('workspaces')
-        .insert([{
-          name,
-          owner_id: profile.id,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        }])
-        .select()
+        .select('*')
+        .eq('id', workspaceId)
         .single()
 
       if (workspaceError) throw workspaceError
-
-      // Add the creator as an admin member
-      const { error: membershipError } = await supabase
-        .from('workspace_memberships')
-        .insert([{
-          workspace_id: workspace.id,
-          user_id: profile.id,
-          role: 'admin',
-          joined_at: new Date().toISOString(),
-        }])
-
-      if (membershipError) {
-        // If membership creation fails, delete the workspace
-        await supabase
-          .from('workspaces')
-          .delete()
-          .eq('id', workspace.id)
-        throw membershipError
-      }
 
       setWorkspaces(prev => [...prev, workspace])
       return workspace
@@ -143,7 +128,7 @@ export function useWorkspaces() {
       toast({
         variant: 'destructive',
         title: 'Error creating workspace',
-        description: 'Please try again later.',
+        description: error instanceof Error ? error.message : 'Please try again later.',
       })
       return null
     }
