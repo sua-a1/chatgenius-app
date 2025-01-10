@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useChannels } from '@/hooks/use-channels'
 import { useDirectMessages } from '@/hooks/use-direct-messages'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -27,14 +27,24 @@ interface WorkspacePageProps {
 
 export default function WorkspacePage({ workspace, workspaces, onOpenProfileSettings, onSelectChannel, onSelectDM, onTabChange }: WorkspacePageProps) {
   const { profile } = useAuth()
-  const { channels, isLoading: isLoadingChannels, createChannel } = useChannels(workspace?.id)
-  const { recentChats } = useDirectMessages(workspace?.id, null)
   const [newChannelName, setNewChannelName] = useState('')
   const [showNewDM, setShowNewDM] = useState(false)
   const [newDMEmail, setNewDMEmail] = useState('')
   const [isCollapsed, setIsCollapsed] = useState(false)
   const [activeTab, setActiveTab] = useState('chat')
   const { toast } = useToast()
+  const { channels, isLoading: isLoadingChannels, createChannel } = useChannels(workspace?.id)
+  const { recentChats, isLoading: isLoadingDMs, refreshChats } = useDirectMessages(workspace?.id, null)
+
+  // Debug logs
+  useEffect(() => {
+    console.log('WorkspacePage: State', { 
+      isLoadingDMs, 
+      recentChatsLength: recentChats?.length,
+      workspaceId: workspace?.id,
+      profileId: profile?.id
+    })
+  }, [isLoadingDMs, recentChats, workspace?.id, profile?.id])
 
   const handleAddChannel = async () => {
     if (!workspace?.id || !newChannelName.trim()) {
@@ -68,7 +78,6 @@ export default function WorkspacePage({ workspace, workspaces, onOpenProfileSett
     }
 
     // TODO: Implement adding DM by email
-    // For now, just show a toast
     toast({
       title: 'Not implemented',
       description: 'This feature is not yet implemented.',
@@ -81,6 +90,13 @@ export default function WorkspacePage({ workspace, workspaces, onOpenProfileSett
     setActiveTab(value)
     onTabChange(value)
   }
+
+  console.log('WorkspacePage: Rendering', { 
+    workspace, 
+    profileId: profile?.id, 
+    isLoadingDMs,
+    recentChatsLength: recentChats.length 
+  })
 
   return (
     <div className={`grid grid-rows-[auto,1fr,auto] h-full border-r ${isCollapsed ? 'w-16' : 'min-w-[16rem] max-w-xs'} transition-all duration-200`}>
@@ -161,21 +177,31 @@ export default function WorkspacePage({ workspace, workspaces, onOpenProfileSett
                 <div>
                   <h2 className="text-lg font-semibold px-2 mb-2">Direct Messages</h2>
                   <div className="space-y-1">
-                    {recentChats.map((chat) => (
-            <Button
-                        key={chat.user_id}
-              variant="ghost"
-                        className="w-full justify-start px-2"
-                        onClick={() => onSelectDM(chat.user_id)}
-                      >
-                        <div className="flex items-center space-x-2 min-w-0">
-                          <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
-                            {chat.username[0].toUpperCase()}
-                          </div>
-                          <span className="truncate">{chat.username}</span>
-                        </div>
-            </Button>
-          ))}
+                    {isLoadingDMs && (
+                      <div className="text-sm text-gray-500 px-2">Loading chats...</div>
+                    )}
+                    {!isLoadingDMs && recentChats.length === 0 && (
+                      <div className="text-sm text-gray-500 px-2">No direct messages yet</div>
+                    )}
+                    {!isLoadingDMs && recentChats.length > 0 && (
+                      <>
+                        {recentChats.map((chat) => (
+                          <Button
+                            key={chat.user_id}
+                            variant="ghost"
+                            className="w-full justify-start px-2"
+                            onClick={() => onSelectDM(chat.user_id)}
+                          >
+                            <div className="flex items-center space-x-2 min-w-0">
+                              <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+                                {chat.username ? chat.username[0].toUpperCase() : '?'}
+                              </div>
+                              <span className="truncate">{chat.username || 'Unknown User'}</span>
+                            </div>
+                          </Button>
+                        ))}
+                      </>
+                    )}
                     {showNewDM ? (
                       <div className="flex items-center gap-2 mt-2 px-2">
                         <Input
@@ -195,7 +221,12 @@ export default function WorkspacePage({ workspace, workspaces, onOpenProfileSett
                         <Button size="sm" onClick={handleAddDM}>
                           <PlusCircle className="h-4 w-4" />
                         </Button>
-                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setShowNewDM(false)}>
+                        <Button 
+                          variant="ghost" 
+                          size="icon" 
+                          className="h-8 w-8" 
+                          onClick={() => setShowNewDM(false)}
+                        >
                           <X className="h-4 w-4" />
                         </Button>
                       </div>
@@ -205,8 +236,8 @@ export default function WorkspacePage({ workspace, workspaces, onOpenProfileSett
                         className="w-full justify-start px-2"
                         onClick={() => setShowNewDM(true)}
                       >
-                        <UserPlus className="mr-2 h-4 w-4 shrink-0" />
-                        <span>New Message</span>
+                        <UserPlus className="mr-2 h-4 w-4" />
+                        <span>New Direct Message</span>
                       </Button>
                     )}
                   </div>
@@ -236,8 +267,7 @@ export default function WorkspacePage({ workspace, workspaces, onOpenProfileSett
       {!isCollapsed && !workspace && (
         <div className="flex-1 p-4">
           <div className="text-center text-muted-foreground">
-            <p>Welcome to ChatGenius!</p>
-            <p className="mt-2">Create or join a workspace to get started.</p>
+            Select a workspace to get started
           </div>
         </div>
       )}
@@ -252,13 +282,13 @@ export default function WorkspacePage({ workspace, workspaces, onOpenProfileSett
           {!isCollapsed && (
             <>
               <div className="flex flex-col items-center min-w-0">
-                <span className="font-semibold text-sm truncate max-w-full">{profile?.username || 'User'}</span>
-                <span className="text-xs text-gray-500 dark:text-gray-400 truncate max-w-full">{profile?.email}</span>
+                <span className="text-sm font-medium truncate">{profile?.username}</span>
+                <span className="text-xs text-muted-foreground truncate">{profile?.email}</span>
               </div>
-              <div className="flex gap-1">
-                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onOpenProfileSettings}>
-            <Settings className="h-4 w-4" />
-          </Button>
+              <div className="flex items-center gap-1">
+                <Button variant="ghost" size="icon" onClick={onOpenProfileSettings}>
+                  <Settings className="h-4 w-4" />
+                </Button>
                 <SignOutButton />
               </div>
             </>

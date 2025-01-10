@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { formatDistanceToNow } from 'date-fns'
 import { Send, Trash2 } from 'lucide-react'
-import { useState } from 'react'
+import { useState, useLayoutEffect, useRef } from 'react'
 import { useAuth } from '@/contexts/auth-context'
 import {
   AlertDialog,
@@ -29,14 +29,23 @@ export function DirectMessages({ workspaceId, selectedUserId, onSelectUser }: Di
   const [messageToDelete, setMessageToDelete] = useState<string | null>(null)
   const { messages, recentChats, isLoading, sendMessage, deleteMessage } = useDirectMessages(workspaceId, selectedUserId)
   const { profile } = useAuth()
+  const messagesEndRef = useRef<HTMLDivElement>(null)
+
+  useLayoutEffect(() => {
+    if (!isLoading && messages.length > 0) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'instant' })
+    }
+  }, [messages, isLoading])
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!newMessage.trim()) return
 
-    const success = await sendMessage(newMessage.trim())
-    if (success) {
-      setNewMessage('')
+    const messageContent = newMessage.trim()
+    setNewMessage('') // Clear input immediately
+    const success = await sendMessage(messageContent)
+    if (!success) {
+      setNewMessage(messageContent) // Restore message if send failed
     }
   }
 
@@ -75,7 +84,7 @@ export function DirectMessages({ workspaceId, selectedUserId, onSelectUser }: Di
         {/* Messages */}
         {selectedUserId ? (
           <div className="flex-1 flex flex-col">
-            <ScrollArea className="flex-1 p-4">
+            <ScrollArea className="flex-1 px-4">
               {isLoading ? (
                 <div className="flex items-center justify-center h-full">
                   <span className="text-sm text-gray-500">Loading messages...</span>
@@ -85,7 +94,7 @@ export function DirectMessages({ workspaceId, selectedUserId, onSelectUser }: Di
                   <span className="text-sm text-gray-500">No messages yet. Start a conversation!</span>
                 </div>
               ) : (
-                <div className="space-y-4">
+                <div className="py-4 space-y-4">
                   {messages.map((message) => (
                     <div
                       key={message.id}
@@ -128,6 +137,7 @@ export function DirectMessages({ workspaceId, selectedUserId, onSelectUser }: Di
                       </div>
                     </div>
                   ))}
+                  <div ref={messagesEndRef} />
                 </div>
               )}
             </ScrollArea>

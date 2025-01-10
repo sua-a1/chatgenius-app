@@ -5,6 +5,16 @@ import { useAuth } from '@/contexts/auth-context'
 import { supabase } from '@/lib/supabase'
 import { useToast } from './use-toast'
 
+interface MessageReaction {
+  id: string
+  message_id: string
+  user_id: string
+  emoji: string
+  created_at: string
+  username: string
+  avatar_url: string | null
+}
+
 interface Message {
   id: string
   content: string
@@ -16,6 +26,7 @@ interface Message {
     username: string
     avatar_url: string | null
   }
+  reactions: MessageReaction[]
 }
 
 interface DatabaseResponse {
@@ -29,6 +40,7 @@ interface DatabaseResponse {
     username: string
     avatar_url: string | null
   }
+  message_reactions_with_users: MessageReaction[]
 }
 
 export function useMessages(channelId: string | undefined) {
@@ -38,75 +50,13 @@ export function useMessages(channelId: string | undefined) {
   const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
-    if (channelId) {
-      loadMessages()
-      const cleanup = subscribeToMessages()
-      return () => {
-        cleanup()
-      }
-    }
-  }, [channelId])
+    if (!channelId) return
 
-  const loadMessages = async () => {
-    try {
-      setIsLoading(true)
-      const { data: rawData, error } = await supabase
-        .from('messages')
-        .select(`
-          id,
-          content,
-          created_at,
-          user_id,
-          channel_id,
-          user:users (
-            id,
-            username,
-            avatar_url
-          )
-        `)
-        .eq('channel_id', channelId)
-        .order('created_at', { ascending: true })
+    setIsLoading(true)
+    loadMessages()
 
-      if (error) throw error
-
-      const data = rawData as unknown as DatabaseResponse[]
-      setMessages(data)
-    } catch (error) {
-      console.error('Error loading messages:', error)
-      toast({
-        variant: 'destructive',
-        title: 'Error loading messages',
-        description: 'Could not load channel messages. Please try again.',
-      })
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
-  const fetchMessageWithUser = async (messageId: string) => {
-    const { data, error } = await supabase
-      .from('messages')
-      .select(`
-        id,
-        content,
-        created_at,
-        user_id,
-        channel_id,
-        user:users (
-          id,
-          username,
-          avatar_url
-        )
-      `)
-      .eq('id', messageId)
-      .single()
-
-    if (error) throw error
-    return data as unknown as DatabaseResponse
-  }
-
-  const subscribeToMessages = () => {
-    const subscription = supabase
+    // Set up realtime subscription
+    const channel = supabase
       .channel(`messages:${channelId}`)
       .on(
         'postgres_changes',
@@ -114,33 +64,61 @@ export function useMessages(channelId: string | undefined) {
           event: '*',
           schema: 'public',
           table: 'messages',
-          filter: `channel_id=eq.${channelId}`,
+          filter: `channel_id=eq.${channelId}`
         },
-        async (payload) => {
-          try {
-            if (payload.eventType === 'INSERT') {
-              const message = await fetchMessageWithUser(payload.new.id)
-              setMessages(prev => [...prev, message])
-            } else if (payload.eventType === 'DELETE') {
-              const deletedMessage = payload.old as Message
-              setMessages(prev => prev.filter(msg => msg.id !== deletedMessage.id))
-            } else if (payload.eventType === 'UPDATE') {
-              const message = await fetchMessageWithUser(payload.new.id)
-              setMessages(prev =>
-                prev.map(msg =>
-                  msg.id === message.id ? message : msg
-                )
-              )
-            }
-          } catch (error) {
-            console.error('Error handling realtime update:', error)
-          }
+        () => {
+          loadMessages()
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'message_reactions_with_users',
+          filter: `message_id=in.(select id from messages where channel_id=${channelId})`
+        },
+        () => {
+          loadMessages()
         }
       )
       .subscribe()
 
     return () => {
-      subscription.unsubscribe()
+      channel.unsubscribe()
+    }
+  }, [channelId])
+
+  const loadMessages = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('messages')
+        .select(`
+          *,
+          user:users(id, username, avatar_url),
+          message_reactions_with_users(*)
+        `)
+        .eq('channel_id', channelId)
+        .order('created_at', { ascending: true })
+
+      if (error) throw error
+
+      setMessages(
+        (data as DatabaseResponse[]).map(message => ({
+          ...message,
+          user: message.user,
+          reactions: message.message_reactions_with_users || []
+        }))
+      )
+    } catch (error) {
+      console.error('Error loading messages:', error)
+      toast({
+        variant: 'destructive',
+        title: 'Error loading messages',
+        description: 'Could not load messages. Please try again.',
+      })
+    } finally {
+      setIsLoading(false)
     }
   }
 

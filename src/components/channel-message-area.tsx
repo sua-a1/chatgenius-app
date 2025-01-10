@@ -1,26 +1,50 @@
-'use client'
-
 import { useEffect, useRef, useState } from 'react'
 import { useAuth } from '@/contexts/auth-context'
-import { useMessages } from '@/hooks/use-messages'
+import { useChannelMessages } from '@/hooks/use-channel-messages'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
-import { Edit, MoreVertical, Trash } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
+import { Edit, MoreVertical, Trash } from 'lucide-react'
 import { MessageReactions } from './message-reactions'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 
-interface ChatAreaProps {
-  channel: {
-    id: string
-    name: string
-  } | null
+interface MessageUser {
+  id: string
+  username: string
+  avatar_url: string | null
 }
 
-export default function ChatArea({ channel }: ChatAreaProps) {
+interface Message {
+  id: string
+  content: string
+  created_at: string
+  user_id: string
+  channel_id: string
+  sender: MessageUser
+  reactions: MessageReaction[]
+}
+
+interface MessageReaction {
+  id: string
+  message_id: string
+  user_id: string
+  emoji: string
+  created_at: string
+  username: string
+  avatar_url: string | null
+}
+
+interface ChannelMessageAreaProps {
+  workspace: {
+    id: string
+  } | null
+  selectedChannelId: string | null
+}
+
+export default function ChannelMessageArea({ workspace, selectedChannelId }: ChannelMessageAreaProps) {
   const { profile } = useAuth()
-  const { messages, isLoading, sendMessage, deleteMessage, updateMessage } = useMessages(channel?.id)
+  const { messages, selectedChannel, isLoading, sendMessage, deleteMessage, updateMessage } = useChannelMessages(workspace?.id, selectedChannelId)
   const [newMessage, setNewMessage] = useState('')
   const [editingMessage, setEditingMessage] = useState<string | null>(null)
   const [editContent, setEditContent] = useState('')
@@ -36,7 +60,7 @@ export default function ChatArea({ channel }: ChatAreaProps) {
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!newMessage.trim() || !channel) return
+    if (!newMessage.trim() || !selectedChannelId || !workspace) return
 
     const success = await sendMessage(newMessage.trim())
     if (success) {
@@ -64,7 +88,7 @@ export default function ChatArea({ channel }: ChatAreaProps) {
     setEditContent('')
   }
 
-  if (!channel) {
+  if (!workspace || !selectedChannelId) {
     return (
       <div className="flex items-center justify-center h-full text-muted-foreground">
         Select a channel to start chatting
@@ -75,7 +99,12 @@ export default function ChatArea({ channel }: ChatAreaProps) {
   return (
     <div className="flex flex-col h-full">
       <div className="border-b px-4 py-2">
-        <h2 className="text-lg font-semibold">#{channel.name}</h2>
+        <div className="flex items-center space-x-2">
+          <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
+            #
+          </div>
+          <h2 className="font-semibold">{selectedChannel?.name}</h2>
+        </div>
       </div>
 
       <ScrollArea className="flex-1 px-4">
@@ -89,7 +118,7 @@ export default function ChatArea({ channel }: ChatAreaProps) {
           </div>
         ) : (
           <div className="py-4 space-y-6">
-            {messages.map((message, index) => {
+            {messages.map((message: Message, index: number) => {
               const previousMessage = index > 0 ? messages[index - 1] : null
               const isFirstMessageFromUser = !previousMessage || previousMessage.user_id !== message.user_id
               const timeDiff = previousMessage 
@@ -102,11 +131,11 @@ export default function ChatArea({ channel }: ChatAreaProps) {
                   {shouldShowHeader && (
                     <div className="flex items-center space-x-2 mb-1">
                       <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
-                        {message.user.username[0].toUpperCase()}
+                        {message.sender.username[0].toUpperCase()}
                       </div>
                       <div>
                         <div className="flex items-baseline space-x-2">
-                          <span className="font-semibold">{message.user.username}</span>
+                          <span className="font-semibold">{message.sender.username}</span>
                           <span className="text-xs text-muted-foreground">
                             {formatDistanceToNow(new Date(message.created_at), { addSuffix: true })}
                           </span>
@@ -123,6 +152,14 @@ export default function ChatArea({ channel }: ChatAreaProps) {
                             onChange={e => setEditContent(e.target.value)}
                             className="flex-1"
                             autoFocus
+                            onKeyDown={e => {
+                              if (e.key === 'Enter' && !e.shiftKey) {
+                                e.preventDefault()
+                                handleSaveEdit(message.id)
+                              } else if (e.key === 'Escape') {
+                                handleCancelEdit()
+                              }
+                            }}
                           />
                           <div className="flex items-center space-x-2">
                             <Button size="sm" onClick={() => handleSaveEdit(message.id)}>Save</Button>
@@ -175,7 +212,7 @@ export default function ChatArea({ channel }: ChatAreaProps) {
           <Input
             value={newMessage}
             onChange={e => setNewMessage(e.target.value)}
-            placeholder={`Message #${channel.name}`}
+            placeholder={`Message #${selectedChannel?.name}`}
             className="flex-1"
           />
           <Button type="submit" disabled={!newMessage.trim()}>
@@ -185,5 +222,4 @@ export default function ChatArea({ channel }: ChatAreaProps) {
       </form>
     </div>
   )
-}
-
+} 

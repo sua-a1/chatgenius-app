@@ -2,23 +2,36 @@ import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { ScrollArea } from '@/components/ui/scroll-area'
 import { Switch } from '@/components/ui/switch'
+import { ScrollArea } from '@/components/ui/scroll-area'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Workspace } from '@/types'
+import { Loader2, Trash2 } from 'lucide-react'
 import { useWorkspaceMembers } from '@/hooks/use-workspace-members'
-import { Loader2 } from 'lucide-react'
+import { useWorkspaces } from '@/hooks/use-workspaces'
+import { Workspace } from '@/types'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog"
 
 interface WorkspaceSettings {
-  maxChannelsPerUser: number;
-  requireChannelApproval: boolean;
+  maxChannelsPerUser: number
+  requireChannelApproval: boolean
 }
 
 interface AdminPanelProps {
-  workspaces?: Workspace[];
+  workspaces: Workspace[]
+  onDeleteWorkspace?: (workspaceId: string) => Promise<boolean>
 }
 
-export function AdminPanel({ workspaces = [] }: AdminPanelProps) {
+export function AdminPanel({ workspaces = [], onDeleteWorkspace }: AdminPanelProps) {
   const [selectedWorkspace, setSelectedWorkspace] = useState<Workspace | null>(null)
   const [newUserEmail, setNewUserEmail] = useState('')
   const [newUserRole, setNewUserRole] = useState<'member' | 'admin'>('member')
@@ -47,28 +60,62 @@ export function AdminPanel({ workspaces = [] }: AdminPanelProps) {
     setSelectedWorkspace(workspace || null)
   }
 
+  const handleDeleteWorkspace = async () => {
+    if (!selectedWorkspace || !onDeleteWorkspace) return
+    const success = await onDeleteWorkspace(selectedWorkspace.id)
+    if (success) {
+      setSelectedWorkspace(null)
+    }
+  }
+
   return (
     <div className="p-4">
       <h2 className="text-2xl font-bold mb-4">Admin Panel</h2>
       <div className="mb-4">
         <Label htmlFor="workspace-select">Select Workspace</Label>
-        <select
-          id="workspace-select"
-          value={selectedWorkspace?.id || ''}
-          onChange={(e) => handleWorkspaceSelect(e.target.value)}
-          className="w-full p-2 border rounded mt-1"
-        >
-          <option value="">Select a workspace</option>
-          {workspaces && workspaces.length > 0 ? (
-            workspaces.map((workspace) => (
-              <option key={workspace.id} value={workspace.id}>
-                {workspace.name}
-              </option>
-            ))
-          ) : (
-            <option value="" disabled>No workspaces available</option>
+        <div className="flex gap-2">
+          <select
+            id="workspace-select"
+            value={selectedWorkspace?.id || ''}
+            onChange={(e) => handleWorkspaceSelect(e.target.value)}
+            className="flex-1 p-2 border rounded mt-1"
+          >
+            <option value="">Select a workspace</option>
+            {workspaces && workspaces.length > 0 ? (
+              workspaces.map((workspace) => (
+                <option key={workspace.id} value={workspace.id}>
+                  {workspace.name}
+                </option>
+              ))
+            ) : (
+              <option value="" disabled>No workspaces available</option>
+            )}
+          </select>
+          {selectedWorkspace && (
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button variant="destructive" className="mt-1">
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Delete Workspace</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    Are you sure you want to delete "{selectedWorkspace.name}"? This action cannot be undone.
+                    All channels, messages, and data associated with this workspace will be permanently deleted.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction onClick={handleDeleteWorkspace} className="bg-destructive text-destructive-foreground">
+                    Delete Workspace
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
           )}
-        </select>
+        </div>
       </div>
       {selectedWorkspace ? (
         <Tabs defaultValue="users">

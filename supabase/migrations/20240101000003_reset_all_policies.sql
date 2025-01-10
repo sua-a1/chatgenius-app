@@ -186,13 +186,17 @@ create policy "dm_create"
     for insert
     with check (
         sender_id = auth.uid()
-        and
-        exists (
-            select 1 from public.workspace_memberships
-            where workspace_id = direct_messages.workspace_id
-            and user_id = receiver_id
-        )
     );
+
+create policy "dm_update"
+    on public.direct_messages
+    for update
+    using (sender_id = auth.uid());
+
+create policy "dm_delete"
+    on public.direct_messages
+    for delete
+    using (sender_id = auth.uid());
 
 -- File policies
 create policy "file_read"

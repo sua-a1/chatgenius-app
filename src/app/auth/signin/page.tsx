@@ -7,15 +7,21 @@ import { Label } from '@/components/ui/label'
 import { useToast } from '@/hooks/use-toast'
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
 import { useSearchParams } from 'next/navigation'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 
 export default function SignInPage() {
   const [email, setEmail] = useState('')
   const [isLoading, setIsLoading] = useState(false)
+  const [isMounted, setIsMounted] = useState(false)
   const supabase = createClientComponentClient()
   const { toast } = useToast()
   const searchParams = useSearchParams()
   const error = searchParams.get('error')
+
+  // Handle hydration mismatch
+  useEffect(() => {
+    setIsMounted(true)
+  }, [])
 
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -48,6 +54,11 @@ export default function SignInPage() {
     }
   }
 
+  // Don't render until mounted to prevent hydration mismatch
+  if (!isMounted) {
+    return null
+  }
+
   return (
     <div className="flex min-h-screen items-center justify-center">
       <Card className="w-[350px]">
@@ -73,9 +84,10 @@ export default function SignInPage() {
                   onChange={(e) => setEmail(e.target.value)}
                   required
                   disabled={isLoading}
+                  suppressHydrationWarning
                 />
               </div>
-              <Button type="submit" disabled={isLoading}>
+              <Button type="submit" disabled={isLoading} suppressHydrationWarning>
                 {isLoading ? 'Sending magic link...' : 'Continue with Email'}
               </Button>
             </div>

@@ -1,31 +1,48 @@
 'use client'
 
-import { Suspense } from 'react'
 import { useState, useEffect } from 'react'
 import Sidebar from '@/components/sidebar'
 import WorkspacePage from '@/components/workspace-page'
-import ChatArea from '@/components/chat-area'
+import ChannelMessageArea from '@/components/channel-message-area'
 import DirectMessageArea from '@/components/direct-message-area'
 import { ChannelManagement } from '@/components/channel-management'
 import { AdminPanel } from '@/components/admin-panel'
 import { UserProfileSettings } from '@/components/user-profile-settings'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Channel, Workspace } from '@/types'
 import { useWorkspaces } from '@/hooks/use-workspaces'
 import { useChannels } from '@/hooks/use-channels'
+import type { Channel } from '@/types'
+
+interface Workspace {
+  id: string;
+  name: string;
+  owner_id: string;
+  created_at: string;
+  updated_at: string;
+}
 
 export default function Home() {
-  const { workspaces, isLoading } = useWorkspaces()
+  const { workspaces, isLoading, createWorkspace, deleteWorkspace } = useWorkspaces()
   const [activeWorkspace, setActiveWorkspace] = useState<Workspace | null>(null)
   const [activeChannel, setActiveChannel] = useState<Channel | null>(null)
   const [activeDM, setActiveDM] = useState<string | null>(null)
   const [showProfileSettings, setShowProfileSettings] = useState(false)
-  const { channels } = useChannels(activeWorkspace?.id)
   const [activeTab, setActiveTab] = useState('chat')
+  const { channels } = useChannels(activeWorkspace?.id)
 
-  // Update active workspace when workspaces load
+  // Update active workspace when workspaces load or change
   useEffect(() => {
-    if (workspaces.length > 0 && !activeWorkspace) {
+    console.log('Workspaces changed:', workspaces)
+    // If the active workspace was deleted, clear it
+    if (activeWorkspace && !workspaces.find(w => w.id === activeWorkspace.id)) {
+      console.log('Active workspace was deleted, clearing state')
+      setActiveWorkspace(null)
+      setActiveChannel(null)
+      setActiveDM(null)
+    }
+    // If no active workspace and workspaces exist, select the first one
+    else if (workspaces.length > 0 && !activeWorkspace) {
+      console.log('Setting first workspace as active')
       setActiveWorkspace(workspaces[0])
     }
   }, [workspaces, activeWorkspace])
@@ -37,12 +54,31 @@ export default function Home() {
     setActiveDM(null)
   }
 
+  const handleCreateWorkspace = async (name: string) => {
+    const workspace = await createWorkspace(name)
+    if (workspace) {
+      setActiveWorkspace(workspace)
+      return workspace
+    }
+    return null
+  }
+
+  const handleDeleteWorkspace = async (workspaceId: string) => {
+    const success = await deleteWorkspace(workspaceId)
+    if (success && activeWorkspace?.id === workspaceId) {
+      setActiveWorkspace(null)
+      setActiveChannel(null)
+      setActiveDM(null)
+    }
+    return success
+  }
+
   const handleSelectChannel = (channelId: string) => {
     if (!activeWorkspace) return
     const channel = channels.find(c => c.id === channelId)
     if (channel) {
       setActiveChannel(channel)
-    setActiveDM(null)
+      setActiveDM(null)
     }
   }
 
@@ -61,43 +97,26 @@ export default function Home() {
 
   const handleTabChange = (tab: string) => {
     setActiveTab(tab)
-    // Reset active states when switching tabs
-    if (tab !== 'chat') {
-      setActiveChannel(null)
-      setActiveDM(null)
-    }
   }
 
   const renderMainContent = () => {
     if (!activeWorkspace) return null
 
     switch (activeTab) {
+      case 'chat':
+        if (activeChannel) {
+          return <ChannelMessageArea workspace={activeWorkspace} selectedChannelId={activeChannel.id} />
+        }
+        if (activeDM) {
+          return <DirectMessageArea workspace={activeWorkspace} selectedUserId={activeDM} />
+        }
+        return null
       case 'manage':
-        return (
-          <div className="flex-1 p-4">
-            <ChannelManagement workspace={activeWorkspace} />
-          </div>
-        )
+        return <ChannelManagement workspace={activeWorkspace} />
       case 'admin':
-        return (
-          <div className="flex-1 p-4">
-            <AdminPanel workspaces={workspaces} />
-          </div>
-        )
+        return <AdminPanel workspaces={workspaces} onDeleteWorkspace={handleDeleteWorkspace} />
       default:
-        return (
-          <div className="flex-1">
-            {activeChannel ? (
-              <ChatArea channel={activeChannel} />
-            ) : activeDM ? (
-              <DirectMessageArea workspace={activeWorkspace} selectedUserId={activeDM} />
-            ) : (
-              <div className="flex items-center justify-center h-full">
-                <span className="text-sm text-gray-500">Select a channel or user to start messaging</span>
-              </div>
-            )}
-          </div>
-        )
+        return null
     }
   }
 
@@ -115,25 +134,22 @@ export default function Home() {
         workspaces={workspaces}
         activeWorkspace={activeWorkspace}
         onSelectWorkspace={handleSelectWorkspace}
+        onCreateWorkspace={handleCreateWorkspace}
         onOpenProfileSettings={handleOpenProfileSettings}
       />
-      <div className="flex flex-1">
-          <WorkspacePage 
-            workspace={activeWorkspace}
-          workspaces={workspaces}
-          onOpenProfileSettings={handleOpenProfileSettings}
-            onSelectChannel={handleSelectChannel}
-            onSelectDM={handleSelectDM}
-          onTabChange={handleTabChange}
-        />
-        {activeWorkspace && renderMainContent()}
-      </div>
+      <WorkspacePage
+        workspace={activeWorkspace}
+        workspaces={workspaces}
+        onOpenProfileSettings={handleOpenProfileSettings}
+        onSelectChannel={handleSelectChannel}
+        onSelectDM={handleSelectDM}
+        onTabChange={handleTabChange}
+      />
+      <main className="flex-1 flex flex-col">
+        {renderMainContent()}
+      </main>
       {showProfileSettings && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center">
-          <div className="bg-white rounded-lg p-6">
-            <UserProfileSettings onClose={handleCloseProfileSettings} />
-          </div>
-        </div>
+        <UserProfileSettings onClose={() => setShowProfileSettings(false)} />
       )}
     </div>
   )

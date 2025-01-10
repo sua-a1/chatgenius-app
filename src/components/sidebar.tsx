@@ -6,21 +6,26 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { PlusCircle, ChevronLeft, ChevronRight, X } from 'lucide-react'
 import { Workspace } from '@/types'
 import { Input } from '@/components/ui/input'
-import { useWorkspaces } from '@/hooks/use-workspaces'
 import { useToast } from '@/hooks/use-toast'
 
 interface SidebarProps {
-  workspaces: Workspace[];
-  activeWorkspace: Workspace | null;
-  onSelectWorkspace: (workspaceId: string) => void;
-  onOpenProfileSettings: () => void;
+  workspaces: Workspace[]
+  activeWorkspace: Workspace | null
+  onSelectWorkspace: (workspaceId: string) => void
+  onCreateWorkspace: (name: string) => Promise<Workspace | null>
+  onOpenProfileSettings: () => void
 }
 
-export default function Sidebar({ workspaces, activeWorkspace, onSelectWorkspace }: SidebarProps) {
+export default function Sidebar({ 
+  workspaces, 
+  activeWorkspace, 
+  onSelectWorkspace,
+  onCreateWorkspace,
+  onOpenProfileSettings,
+}: SidebarProps) {
   const [isCollapsed, setIsCollapsed] = useState(false)
   const [isCreating, setIsCreating] = useState(false)
   const [newWorkspaceName, setNewWorkspaceName] = useState('')
-  const { createWorkspace } = useWorkspaces()
   const { toast } = useToast()
 
   const handleCreateWorkspace = async () => {
@@ -33,7 +38,7 @@ export default function Sidebar({ workspaces, activeWorkspace, onSelectWorkspace
       return
     }
 
-    const workspace = await createWorkspace(newWorkspaceName.trim())
+    const workspace = await onCreateWorkspace(newWorkspaceName.trim())
     if (workspace) {
       setNewWorkspaceName('')
       setIsCreating(false)
@@ -86,6 +91,7 @@ export default function Sidebar({ workspaces, activeWorkspace, onSelectWorkspace
                         setNewWorkspaceName('')
                       }
                     }}
+                    autoFocus
                   />
                   <div className="flex gap-2">
                     <Button 

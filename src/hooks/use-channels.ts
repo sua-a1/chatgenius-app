@@ -7,58 +7,65 @@ import { Channel } from '@/types'
 import { useToast } from './use-toast'
 
 export function useChannels(workspaceId: string | undefined) {
-  const { profile } = useAuth()
+  const { profile, isInitialized } = useAuth()
   const { toast } = useToast()
   const [channels, setChannels] = useState<Channel[]>([])
   const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
-    if (workspaceId && profile?.id) {
-      console.log('Loading channels for workspace:', workspaceId)
-      loadChannels()
-
-      // Set up realtime subscriptions
-      const channelsChannel = supabase
-        .channel(`channels:${workspaceId}`)
-        .on(
-          'postgres_changes',
-          {
-            event: '*',
-            schema: 'public',
-            table: 'channels',
-            filter: `workspace_id=eq.${workspaceId}`,
-          },
-          async () => {
-            await loadChannels()
-          }
-        )
-        .subscribe()
-
-      const membershipsChannel = supabase
-        .channel(`channel_memberships:${workspaceId}`)
-        .on(
-          'postgres_changes',
-          {
-            event: '*',
-            schema: 'public',
-            table: 'channel_memberships',
-          },
-          async () => {
-            await loadChannels()
-          }
-        )
-        .subscribe()
-
-      // Cleanup subscriptions
-      return () => {
-        channelsChannel.unsubscribe()
-        membershipsChannel.unsubscribe()
-      }
-    } else {
-      console.log('No workspace ID or profile available')
-      setChannels([])
+    if (!isInitialized) {
+      console.log('Channels: Auth not initialized yet')
+      return
     }
-  }, [workspaceId, profile?.id])
+
+    if (!workspaceId || !profile?.id) {
+      console.log('Channels: No workspace ID or profile available')
+      setChannels([])
+      setIsLoading(false)
+      return
+    }
+
+    console.log('Channels: Loading channels for workspace:', workspaceId)
+    loadChannels()
+
+    // Set up realtime subscriptions
+    const channelsChannel = supabase
+      .channel(`channels:${workspaceId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'channels',
+          filter: `workspace_id=eq.${workspaceId}`,
+        },
+        async () => {
+          await loadChannels()
+        }
+      )
+      .subscribe()
+
+    const membershipsChannel = supabase
+      .channel(`channel_memberships:${workspaceId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'channel_memberships',
+        },
+        async () => {
+          await loadChannels()
+        }
+      )
+      .subscribe()
+
+    // Cleanup subscriptions
+    return () => {
+      channelsChannel.unsubscribe()
+      membershipsChannel.unsubscribe()
+    }
+  }, [workspaceId, profile?.id, isInitialized])
 
   const loadChannels = async () => {
     try {
