@@ -25,9 +25,16 @@ interface Message {
   id: string
   content: string
   created_at: string
+  updated_at: string
   user_id: string
   channel_id: string
-  sender: MessageUser
+  reply_to: string | null
+  reply_count: number
+  user?: {
+    id: string
+    username: string | null
+    avatar_url: string | null
+  }
   reactions: MessageReaction[]
 }
 
@@ -35,11 +42,14 @@ interface DatabaseResponse {
   id: string
   content: string
   created_at: string
+  updated_at: string
   user_id: string
   channel_id: string
-  users: {
+  reply_to: string | null
+  reply_count: number
+  user: {
     id: string
-    username: string
+    username: string | null
     avatar_url: string | null
   }
   message_reactions_with_users: MessageReaction[]
@@ -86,48 +96,48 @@ export function useChannelMessages(workspaceId: string | undefined, selectedChan
     if (!selectedChannelId) return
 
     try {
-      console.log('Loading messages for channel:', selectedChannelId)
+      // Load messages that are not replies (reply_to is null)
       const { data, error } = await supabase
         .from('messages')
         .select(`
           id,
           content,
           created_at,
+          updated_at,
           user_id,
           channel_id,
-          users!user_id (
-            id,
-            username,
-            avatar_url
-          ),
+          reply_to,
+          reply_count,
+          user:users!inner(id, username, avatar_url),
           message_reactions_with_users(*)
         `)
         .eq('channel_id', selectedChannelId)
-        .order('created_at', { ascending: true }) as { data: DatabaseResponse[] | null, error: any }
+        .is('reply_to', null)
+        .order('created_at', { ascending: true })
 
       if (error) throw error
 
-      if (!data) {
-        console.log('No messages found')
-        setMessages([])
-        return
-      }
+      const messages = data.map(message => {
+        const userData = Array.isArray(message.user) ? message.user[0] : message.user
+        return {
+          id: message.id,
+          content: message.content,
+          created_at: message.created_at,
+          updated_at: message.updated_at,
+          user_id: message.user_id,
+          channel_id: message.channel_id,
+          reply_to: message.reply_to,
+          reply_count: message.reply_count,
+          user: {
+            id: userData.id,
+            username: userData.username,
+            avatar_url: userData.avatar_url
+          },
+          reactions: message.message_reactions_with_users || []
+        }
+      })
 
-      console.log('Loaded messages:', data.length)
-      const formattedMessages: Message[] = data.map(message => ({
-        id: message.id,
-        content: message.content,
-        created_at: message.created_at,
-        user_id: message.user_id,
-        channel_id: message.channel_id,
-        sender: {
-          id: message.users.id,
-          username: message.users.username,
-          avatar_url: message.users.avatar_url
-        },
-        reactions: message.message_reactions_with_users || []
-      }))
-      setMessages(formattedMessages)
+      setMessages(messages)
     } catch (error) {
       console.error('Error loading messages:', error)
       toast({
@@ -164,24 +174,32 @@ export function useChannelMessages(workspaceId: string | undefined, selectedChan
           table: 'messages',
           filter: `channel_id=eq.${selectedChannelId}`
         },
-        (payload) => {
+        async (payload) => {
           console.log('[DEBUG] New message received:', payload)
-          // Optimistically add the new message
-          setMessages(prev => [...prev, {
-            id: payload.new.id,
-            content: payload.new.content,
-            created_at: payload.new.created_at,
-            user_id: payload.new.user_id,
-            channel_id: payload.new.channel_id,
-            sender: payload.new.users || {
-              id: payload.new.user_id,
-              username: 'Loading...',
-              avatar_url: null
-            },
-            reactions: []
-          } as Message])
-          // Reload messages to get full user data
-          loadMessages()
+          
+          // Only add message to main channel if it's not a reply
+          if (!payload.new.reply_to) {
+            // Optimistically add the new message
+            const newMessage: Message = {
+              id: payload.new.id,
+              content: payload.new.content,
+              created_at: payload.new.created_at,
+              updated_at: payload.new.updated_at,
+              user_id: payload.new.user_id,
+              channel_id: payload.new.channel_id,
+              reply_to: payload.new.reply_to,
+              reply_count: payload.new.reply_count,
+              user: payload.new.user || {
+                id: payload.new.user_id,
+                username: 'Loading...',
+                avatar_url: null
+              },
+              reactions: []
+            }
+            setMessages(prev => [...prev, newMessage])
+            // Reload messages to get full user data
+            loadMessages()
+          }
         }
       )
       .on(
@@ -196,7 +214,12 @@ export function useChannelMessages(workspaceId: string | undefined, selectedChan
           console.log('[DEBUG] Message updated:', payload)
           setMessages(prev => prev.map(msg => 
             msg.id === payload.new.id 
-              ? { ...msg, content: payload.new.content }
+              ? { 
+                  ...msg, 
+                  content: payload.new.content,
+                  updated_at: payload.new.updated_at,
+                  reply_count: payload.new.reply_count
+                }
               : msg
           ))
         }
@@ -225,22 +248,24 @@ export function useChannelMessages(workspaceId: string | undefined, selectedChan
     }
   }, [workspaceId, selectedChannelId, profile?.id, loadMessages, loadSelectedChannel])
 
-  const sendMessage = async (content: string) => {
+  const sendMessage = async (content: string, replyTo?: string) => {
     if (!profile?.id || !selectedChannelId) return false
 
     try {
-      console.log('[DEBUG] Sending message:', { content, channelId: selectedChannelId })
-      const { data, error } = await supabase
+      console.log('[DEBUG] Sending message:', { content, channelId: selectedChannelId, replyTo })
+      
+      // Send as a normal message or thread reply
+      const { error } = await supabase
         .from('messages')
         .insert([{
           content,
           channel_id: selectedChannelId,
           user_id: profile.id,
+          reply_to: replyTo || null,
         }])
-        .select()
 
       if (error) throw error
-      console.log('[DEBUG] Message sent successfully:', data)
+
       await loadMessages() // Force reload messages after sending
       return true
     } catch (error) {
@@ -307,6 +332,61 @@ export function useChannelMessages(workspaceId: string | undefined, selectedChan
     }
   }
 
+  const loadThreadMessages = async (parentMessageId: string) => {
+    if (!selectedChannelId) return []
+
+    try {
+      // First, get all messages that are direct replies to this thread
+      const { data: threadData, error: threadError } = await supabase
+        .from('messages')
+        .select(`
+          *,
+          user:users(id, username, avatar_url),
+          message_reactions_with_users(*)
+        `)
+        .eq('channel_id', selectedChannelId)
+        .eq('reply_to', parentMessageId)
+        .order('created_at', { ascending: true })
+
+      if (threadError) throw threadError
+
+      // Get all replies to any message in the thread
+      const threadMessageIds = threadData.map(msg => msg.id)
+      const { data: nestedReplies, error: nestedError } = await supabase
+        .from('messages')
+        .select(`
+          *,
+          user:users(id, username, avatar_url),
+          message_reactions_with_users(*)
+        `)
+        .eq('channel_id', selectedChannelId)
+        .in('reply_to', threadMessageIds)
+        .order('created_at', { ascending: true })
+
+      if (nestedError) throw nestedError
+
+      // Combine and deduplicate messages
+      const allMessages = [...threadData, ...(nestedReplies || [])]
+      const uniqueMessages = Array.from(
+        new Map(allMessages.map(msg => [msg.id, msg])).values()
+      )
+
+      return uniqueMessages.map(message => ({
+        ...message,
+        user: message.user,
+        reactions: message.message_reactions_with_users || []
+      }))
+    } catch (error) {
+      console.error('Error loading thread messages:', error)
+      toast({
+        variant: 'destructive',
+        title: 'Error loading thread messages',
+        description: 'Could not load thread messages. Please try again.',
+      })
+      return []
+    }
+  }
+
   return {
     messages,
     selectedChannel,
@@ -314,5 +394,6 @@ export function useChannelMessages(workspaceId: string | undefined, selectedChan
     sendMessage,
     deleteMessage,
     updateMessage,
+    loadThreadMessages,
   }
 } 

@@ -53,13 +53,25 @@ export interface User {
     channel_id: string;
     content: string;
     reply_to: string | null;
+    reply_count: number;
     created_at: string;
-    file?: {
-      name: string;
-      url: string;
-      type: string;
+    updated_at: string;
+    user?: {
+      id: string;
+      username: string | null;
+      avatar_url: string | null;
     };
-    reactions?: Reaction[];
+    reactions?: MessageReaction[];
+  }
+  
+  export interface MessageReaction {
+    id: string;
+    message_id: string;
+    user_id: string;
+    emoji: string;
+    created_at: string;
+    username: string;
+    avatar_url: string | null;
   }
   
   export interface DirectMessage {
