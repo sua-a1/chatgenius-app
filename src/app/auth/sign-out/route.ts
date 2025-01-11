@@ -9,8 +9,8 @@ export async function POST() {
   // Sign out from Supabase
   await supabase.auth.signOut()
   
-  // Create response with redirect
-  const response = NextResponse.redirect(new URL('/auth/signin', process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'), {
+  // Create response with redirect to landing page
+  const response = NextResponse.redirect(new URL('/', process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'), {
     // 301 status will force the browser to follow the redirect
     status: 301
   })

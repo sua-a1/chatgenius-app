@@ -20,18 +20,15 @@ export function UserMenu({ onOpenProfileSettings, isCollapsed }: { onOpenProfile
   const { toast } = useToast()
   const [showProfileDialog, setShowProfileDialog] = useState(false)
 
-  // If there's no profile or profile.id is empty, don't render anything
   if (!profile?.id) return null
 
   const handleSignOut = async () => {
     try {
-      // Show loading toast
       toast({
         title: 'Signing out...',
         description: 'Please wait while we sign you out.',
       })
 
-      // Use POST request for sign-out
       const response = await fetch('/auth/sign-out', {
         method: 'POST',
         credentials: 'include'
@@ -41,11 +38,8 @@ export function UserMenu({ onOpenProfileSettings, isCollapsed }: { onOpenProfile
         throw new Error('Failed to sign out')
       }
 
-      // Clear any local state/storage
       localStorage.clear()
       sessionStorage.clear()
-      
-      // Follow the redirect from the sign-out route
       window.location.href = response.url
     } catch (error: any) {
       console.error('Error signing out:', error)
@@ -72,7 +66,7 @@ export function UserMenu({ onOpenProfileSettings, isCollapsed }: { onOpenProfile
           <div className="flex items-center gap-2">
             <Dialog open={showProfileDialog} onOpenChange={setShowProfileDialog}>
               <DialogTrigger asChild>
-                <Button variant="ghost" size="icon">
+                <Button variant="ghost" size="icon" className="hover:bg-[#4A3B8C]/10">
                   <UserCircle className="h-4 w-4" />
                 </Button>
               </DialogTrigger>
@@ -123,10 +117,13 @@ export function UserMenu({ onOpenProfileSettings, isCollapsed }: { onOpenProfile
                     )}
                   </div>
                   <div className="flex justify-end">
-                    <Button onClick={() => {
-                      onOpenProfileSettings?.();
-                      setShowProfileDialog(false);
-                    }}>
+                    <Button 
+                      onClick={() => {
+                        onOpenProfileSettings?.();
+                        setShowProfileDialog(false);
+                      }}
+                      className="bg-[#4A3B8C] hover:bg-[#3A2E6E]"
+                    >
                       <User className="h-4 w-4 mr-2" />
                       Edit Profile
                     </Button>
@@ -134,10 +131,10 @@ export function UserMenu({ onOpenProfileSettings, isCollapsed }: { onOpenProfile
                 </div>
               </DialogContent>
             </Dialog>
-            <Button variant="ghost" size="icon" onClick={onOpenProfileSettings}>
+            <Button variant="ghost" size="icon" onClick={onOpenProfileSettings} className="hover:bg-[#4A3B8C]/10">
               <User className="h-4 w-4" />
             </Button>
-            <Button variant="ghost" size="icon" onClick={handleSignOut}>
+            <Button variant="ghost" size="icon" onClick={handleSignOut} className="hover:bg-[#4A3B8C]/10">
               <LogOut className="h-4 w-4" />
             </Button>
           </div>

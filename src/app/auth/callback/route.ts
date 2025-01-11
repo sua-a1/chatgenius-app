@@ -64,7 +64,8 @@ export async function GET(request: Request) {
       }
     }
 
-    return NextResponse.redirect(requestUrl.origin)
+    // Redirect to app page instead of root
+    return NextResponse.redirect(`${requestUrl.origin}/app`)
   } catch (error: any) {
     console.error('Auth callback error:', error)
     return NextResponse.redirect(

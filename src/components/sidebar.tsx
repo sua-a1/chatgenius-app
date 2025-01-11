@@ -7,6 +7,7 @@ import { PlusCircle, ChevronLeft, ChevronRight, X } from 'lucide-react'
 import { Workspace } from '@/types'
 import { Input } from '@/components/ui/input'
 import { useToast } from '@/hooks/use-toast'
+import { Logo } from '@/components/logo'
 
 interface SidebarProps {
   workspaces: Workspace[]
@@ -51,29 +52,48 @@ export default function Sidebar({
   }
 
   return (
-    <div className="grid grid-rows-[auto,1fr] h-full bg-gray-800 text-white transition-all duration-300" style={{ width: isCollapsed ? '4rem' : '16rem' }}>
+    <div className="grid grid-rows-[auto,1fr] h-full bg-[#3A2E6E] text-white overflow-hidden" style={{ width: isCollapsed ? '4rem' : '16rem' }}>
       {/* Workspace Header */}
-      <div className="p-4 border-b border-gray-700 flex items-center justify-between">
-        {!isCollapsed && <h1 className="text-xl font-bold">ChatGenius</h1>}
-        <Button variant="ghost" size="icon" onClick={() => setIsCollapsed(!isCollapsed)}>
-          {isCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
-        </Button>
+      <div className="border-b border-white/10">
+        <div className="h-16 flex items-center justify-between py-4">
+          <div 
+            className={`flex-1 min-w-0 ${isCollapsed ? 'px-3 cursor-pointer' : 'px-4'}`}
+            onClick={() => isCollapsed && setIsCollapsed(false)}
+          >
+            <div className="flex items-center">
+              {!isCollapsed ? (
+                <Logo size="md" showText={true} />
+              ) : (
+                <Logo size="md" showText={false} />
+              )}
+            </div>
+          </div>
+          <div className={`flex-shrink-0 ${isCollapsed ? 'pr-1' : 'pr-2'}`}>
+            <Button variant="ghost" size="icon" className="hover:bg-white/10" onClick={() => setIsCollapsed(!isCollapsed)}>
+              {isCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
+            </Button>
+          </div>
+        </div>
       </div>
 
       {/* Workspaces List */}
       <div className="overflow-hidden">
         <ScrollArea className="h-full">
-          <div className="p-2">
-            {!isCollapsed && <h2 className="mb-2 px-2 text-lg font-semibold tracking-tight">Workspaces</h2>}
+          <div className={`p-2 ${isCollapsed ? 'px-1' : ''}`}>
+            {!isCollapsed && <h2 className="mb-2 px-2 text-lg font-semibold tracking-tight truncate">Workspaces</h2>}
             <div className="space-y-1">
               {workspaces.map((workspace) => (
                 <Button
                   key={workspace.id}
                   variant="ghost"
-                  className={`w-full justify-start ${activeWorkspace?.id === workspace.id ? 'bg-gray-700' : ''}`}
+                  className={`w-full justify-start hover:bg-white/10 overflow-hidden ${
+                    activeWorkspace?.id === workspace.id ? 'bg-white/20' : ''
+                  } ${isCollapsed ? 'px-3' : 'px-3'}`}
                   onClick={() => onSelectWorkspace(workspace.id)}
                 >
-                  {isCollapsed ? workspace.name[0] : workspace.name}
+                  <span className={`truncate ${isCollapsed ? 'w-6 text-center block' : ''}`}>
+                    {isCollapsed ? workspace.name[0] : workspace.name}
+                  </span>
                 </Button>
               ))}
               {isCreating && !isCollapsed ? (
@@ -82,7 +102,7 @@ export default function Sidebar({
                     value={newWorkspaceName}
                     onChange={(e) => setNewWorkspaceName(e.target.value)}
                     placeholder="Workspace name"
-                    className="bg-gray-700 border-gray-600 text-white placeholder:text-gray-400"
+                    className="bg-white/10 border-white/20 text-white placeholder:text-white/60 w-full"
                     onKeyDown={(e) => {
                       if (e.key === 'Enter') {
                         handleCreateWorkspace()
@@ -96,7 +116,7 @@ export default function Sidebar({
                   <div className="flex gap-2">
                     <Button 
                       variant="secondary" 
-                      className="flex-1"
+                      className="flex-1 bg-white/10 hover:bg-white/20"
                       onClick={handleCreateWorkspace}
                     >
                       Create
@@ -104,6 +124,7 @@ export default function Sidebar({
                     <Button 
                       variant="ghost" 
                       size="icon"
+                      className="hover:bg-white/10"
                       onClick={() => {
                         setIsCreating(false)
                         setNewWorkspaceName('')
@@ -116,11 +137,11 @@ export default function Sidebar({
               ) : (
                 <Button 
                   variant="ghost" 
-                  className="w-full justify-start"
+                  className={`w-full justify-start hover:bg-white/10 overflow-hidden ${isCollapsed ? 'px-3' : 'px-3'}`}
                   onClick={() => !isCollapsed && setIsCreating(true)}
                 >
-                  <PlusCircle className="mr-2 h-4 w-4" />
-                  {!isCollapsed && 'Add Workspace'}
+                  <PlusCircle className={`h-4 w-4 flex-shrink-0 ${!isCollapsed ? 'mr-2' : ''}`} />
+                  {!isCollapsed && <span className="truncate">Add Workspace</span>}
                 </Button>
               )}
             </div>

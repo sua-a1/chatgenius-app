@@ -22,6 +22,7 @@ import { UserMenu } from '@/components/user-menu'
 import { useWorkspaceMembers } from '@/hooks/use-workspace-members'
 import { Command, CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command'
 import { UserAvatar } from '@/components/ui/user-avatar'
+import { Logo } from '@/components/logo'
 
 interface WorkspacePageProps {
   workspace?: Workspace | null
@@ -137,7 +138,15 @@ export default function WorkspacePage({ workspace, workspaces, onOpenProfileSett
     <div className={`grid grid-rows-[auto,1fr,auto] h-full border-r ${isCollapsed ? 'w-16' : 'min-w-[16rem] max-w-xs'} transition-all duration-200`}>
       <div className="border-b">
         <div className="flex h-16 items-center px-2 justify-between">
-          {!isCollapsed && workspace && <h1 className="text-xl font-semibold truncate px-2">{workspace.name}</h1>}
+          {!isCollapsed ? (
+            <div className="flex items-center gap-2 px-2">
+              {workspace && <h1 className="text-xl font-semibold truncate">{workspace.name}</h1>}
+            </div>
+          ) : (
+            <div className="w-full flex justify-center">
+              <span className="text-xl font-semibold">{workspace?.name[0]}</span>
+            </div>
+          )}
           <Button variant="ghost" size="icon" onClick={() => setIsCollapsed(!isCollapsed)}>
             {isCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
           </Button>
@@ -145,93 +154,101 @@ export default function WorkspacePage({ workspace, workspaces, onOpenProfileSett
       </div>
 
       {!isCollapsed && workspace && (
-        <Tabs value={activeTab} onValueChange={handleTabChange} className="flex-1">
+        <Tabs value={activeTab} onValueChange={handleTabChange} className="flex-1 flex flex-col overflow-hidden">
           <div className="px-2 pt-2">
-            <TabsList className="w-full">
-              <TabsTrigger value="chat" className="flex-1">
+            <TabsList className="w-full bg-[#3A2E6E]/10">
+              <TabsTrigger 
+                value="chat" 
+                className="flex-1 data-[state=active]:bg-[#3A2E6E] data-[state=active]:text-white"
+              >
                 <MessageSquare className="h-4 w-4 mr-2" />
                 Chat
               </TabsTrigger>
-              <TabsTrigger value="manage" className="flex-1">
+              <TabsTrigger 
+                value="manage" 
+                className="flex-1 data-[state=active]:bg-[#3A2E6E] data-[state=active]:text-white"
+              >
                 <Users className="h-4 w-4 mr-2" />
                 Manage
               </TabsTrigger>
-              <TabsTrigger value="admin" className="flex-1">
+              <TabsTrigger 
+                value="admin" 
+                className="flex-1 data-[state=active]:bg-[#3A2E6E] data-[state=active]:text-white"
+              >
                 <Shield className="h-4 w-4 mr-2" />
                 Admin
               </TabsTrigger>
             </TabsList>
           </div>
 
-          <TabsContent value="chat" className="flex-1 overflow-hidden">
-            <ScrollArea className="flex-1">
-              <div className="px-2 py-4 space-y-4">
-                {/* Channels Section */}
-                <div>
-                  <h2 className="text-lg font-semibold px-2 mb-2">Channels</h2>
-                  <div className="space-y-1">
-                    {isLoadingChannels ? (
-                      <div className="text-sm text-gray-500 px-2">Loading channels...</div>
-                    ) : channels.length === 0 ? (
-                      <div className="text-sm text-gray-500 px-2">No channels yet</div>
-                    ) : (
-                      channels.map((channel) => (
-            <Button
-              key={channel.id}
-              variant="ghost"
-                          className="w-full justify-start px-2"
-              onClick={() => onSelectChannel(channel.id)}
-            >
-                          <Hash className="mr-2 h-4 w-4 shrink-0" />
-                          <span className="truncate">{channel.name}</span>
-            </Button>
-                      ))
-                    )}
-                    <div className="flex items-center gap-2 mt-2 px-2">
-            <Input
-              value={newChannelName}
-              onChange={(e) => setNewChannelName(e.target.value)}
-              placeholder="New channel name"
-                        className="flex-1 h-8"
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            handleAddChannel()
-                          } else if (e.key === 'Escape') {
-                            setNewChannelName('')
-                          }
-                        }}
-                      />
-                      <Button size="sm" onClick={handleAddChannel}>
-              <PlusCircle className="h-4 w-4" />
-            </Button>
-          </div>
-        </div>
-                </div>
+          {activeTab === 'chat' && (
+            <div className="flex-1 overflow-hidden flex flex-col">
+              <ScrollArea className="flex-1">
+                <div className="px-2 py-4 space-y-4">
+                  {/* Channels Section */}
+                  <div>
+                    <h2 className="text-lg font-semibold px-2 mb-2">Channels</h2>
+                    <div className="space-y-1">
+                      {isLoadingChannels ? (
+                        <div className="text-sm text-muted-foreground px-2">Loading channels...</div>
+                      ) : channels.length === 0 ? (
+                        <div className="text-sm text-muted-foreground px-2">No channels yet</div>
+                      ) : (
+                        channels.map((channel) => (
+                          <Button
+                            key={channel.id}
+                            variant="ghost"
+                            className="w-full justify-start px-2 hover:bg-[#3A2E6E]/10"
+                            onClick={() => onSelectChannel(channel.id)}
+                          >
+                            <Hash className="mr-2 h-4 w-4 shrink-0" />
+                            <span className="truncate">{channel.name}</span>
+                          </Button>
+                        ))
+                      )}
+                      <div className="flex items-center gap-2 mt-2 px-2">
+                        <Input
+                          value={newChannelName}
+                          onChange={(e) => setNewChannelName(e.target.value)}
+                          placeholder="New channel name"
+                          className="flex-1 h-8"
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              handleAddChannel()
+                            } else if (e.key === 'Escape') {
+                              setNewChannelName('')
+                            }
+                          }}
+                        />
+                        <Button 
+                          size="sm" 
+                          onClick={handleAddChannel}
+                          className="bg-[#3A2E6E] hover:bg-[#2A2154]"
+                        >
+                          <PlusCircle className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
 
-                {/* Direct Messages Section */}
-                <div>
-                  <h2 className="text-lg font-semibold px-2 mb-2">Direct Messages</h2>
-                  <div className="space-y-1">
-                    {isLoadingDMs && (
-                      <div className="text-sm text-gray-500 px-2">Loading chats...</div>
-                    )}
-                    {!isLoadingDMs && recentChats.length === 0 && (
-                      <div className="text-sm text-gray-500 px-2">No direct messages yet</div>
-                    )}
-                    {!isLoadingDMs && recentChats.length > 0 && (
-                      <>
-                        {recentChats.map((chat) => {
-                          const handleDMClick = () => {
-                            console.log('Opening DM with user:', chat.user_id);
-                            onSelectDM(chat.user_id);
-                          };
-
-                          return (
-                            <div key={chat.user_id} className="flex items-center w-full gap-1">
+                  {/* Direct Messages Section */}
+                  <div>
+                    <h2 className="text-lg font-semibold px-2 mb-2">Direct Messages</h2>
+                    <div className="space-y-1">
+                      {isLoadingDMs && (
+                        <div className="text-sm text-muted-foreground px-2">Loading chats...</div>
+                      )}
+                      {!isLoadingDMs && recentChats.length === 0 && (
+                        <div className="text-sm text-muted-foreground px-2">No direct messages yet</div>
+                      )}
+                      {!isLoadingDMs && recentChats.length > 0 && (
+                        <>
+                          {recentChats.map((chat) => (
                             <Button
+                              key={chat.user_id}
                               variant="ghost"
-                                className="flex-1 justify-start px-2"
-                                onClick={handleDMClick}
+                              className="w-full justify-start px-2 hover:bg-[#3A2E6E]/10"
+                              onClick={() => onSelectDM(chat.user_id)}
                             >
                               <div className="flex items-center space-x-2 min-w-0">
                                 <Avatar 
@@ -244,120 +261,52 @@ export default function WorkspacePage({ workspace, workspaces, onOpenProfileSett
                                 <span className="truncate">{chat.username}</span>
                               </div>
                             </Button>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-8 shrink-0"
-                                onClick={handleDMClick}
-                                title="Open chat"
-                              >
-                                <MessageSquare className="h-4 w-4" />
-                              </Button>
-                            </div>
-                          );
-                        })}
-                      </>
-                    )}
-                    {showNewDM ? (
-                      <div className="flex items-center gap-2 mt-2 px-2">
-                        <Button 
-                          size="sm" 
-                          className="w-full justify-start h-8" 
-                          variant="ghost"
-                          onClick={handleAddDM}
-                        >
-                          <UserPlus className="h-4 w-4 mr-2" />
-                          New Message
-                        </Button>
-                        <Button 
-                          variant="ghost" 
-                          size="icon" 
-                          className="h-8 w-8" 
-                          onClick={() => setShowNewDM(false)}
-                        >
-                          <X className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    ) : (
+                          ))}
+                        </>
+                      )}
                       <Button
                         variant="ghost"
-                        size="sm"
-                        className="w-full justify-start"
-                        onClick={() => setShowNewDM(true)}
+                        className="w-full justify-start px-2 hover:bg-[#3A2E6E]/10"
+                        onClick={handleAddDM}
                       >
-                        <PlusCircle className="h-4 w-4 mr-2" />
-                        New Message
+                        <UserPlus className="mr-2 h-4 w-4" />
+                        <span>New Message</span>
                       </Button>
-                    )}
+                    </div>
                   </div>
                 </div>
-              </div>
-            </ScrollArea>
-          </TabsContent>
-
-          <TabsContent value="manage" className="flex-1 overflow-hidden">
-            <ScrollArea className="flex-1">
-              <div className="p-4">
-                <p className="text-sm text-muted-foreground">Select the "Manage" tab in the main area to manage channels.</p>
-              </div>
-            </ScrollArea>
-          </TabsContent>
-
-          <TabsContent value="admin" className="flex-1 overflow-hidden">
-            <ScrollArea className="flex-1">
-              <div className="p-4">
-                <p className="text-sm text-muted-foreground">Select the "Admin" tab in the main area to access admin settings.</p>
-        </div>
-      </ScrollArea>
-          </TabsContent>
+              </ScrollArea>
+            </div>
+          )}
         </Tabs>
       )}
 
-      {!isCollapsed && !workspace && (
-        <div className="flex-1 p-4">
-          <div className="text-center text-muted-foreground">
-            Select a workspace to get started
-          </div>
-        </div>
-      )}
-
-      {/* User Profile Section - Fixed at bottom */}
-      <div className="border-t border-gray-200 dark:border-gray-700 p-2">
-        <div className={`flex ${isCollapsed ? 'justify-center' : 'flex-col items-center space-y-2'}`}>
-          <UserMenu onOpenProfileSettings={onOpenProfileSettings} isCollapsed={isCollapsed} />
-        </div>
+      <div className="border-t p-2">
+        <UserMenu onOpenProfileSettings={onOpenProfileSettings} isCollapsed={isCollapsed} />
       </div>
 
+      {/* Member Search Dialog */}
       <CommandDialog open={showMemberSearch} onOpenChange={setShowMemberSearch}>
         <CommandInput 
-          placeholder="Search workspace members..." 
+          placeholder="Search members..." 
           value={memberSearchQuery}
           onValueChange={setMemberSearchQuery}
         />
         <CommandList>
           <CommandEmpty>No members found.</CommandEmpty>
-          <CommandGroup heading="Workspace Members">
-            {filteredMembers?.map(member => (
+          <CommandGroup>
+            {filteredMembers.map((member) => (
               <CommandItem
                 key={member.id}
-                value={`${member.username} ${member.email}`}
                 onSelect={() => handleSelectMember(member.id)}
-                className="cursor-pointer hover:bg-accent hover:text-accent-foreground"
+                className="flex items-center gap-2 cursor-pointer hover:bg-[#4A3B8C]/10"
               >
-                <UserAvatar 
-                  user={{
-                    id: member.id,
-                    username: member.username,
-                    email: member.email,
-                    avatar_url: member.avatar_url,
-                    created_at: member.created_at
-                  }} 
-                  size="sm" 
+                <UserAvatar
+                  user={member}
+                  className="h-6 w-6"
                 />
-                <div className="ml-2">
-                  <div className="font-medium text-foreground">{member.username}</div>
-                  <div className="text-sm text-muted-foreground">{member.email}</div>
-                </div>
+                <span>{member.username}</span>
+                <span className="text-sm text-muted-foreground">{member.email}</span>
               </CommandItem>
             ))}
           </CommandGroup>

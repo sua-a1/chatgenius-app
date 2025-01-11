@@ -70,3 +70,35 @@ body {
     @apply bg-background text-foreground;
   }
 }
+
+@layer utilities {
+  .animation-delay-2000 {
+    animation-delay: 2s;
+  }
+  .animation-delay-4000 {
+    animation-delay: 4s;
+  }
+}
+
+@keyframes float {
+  0% {
+    transform: translate(0, 0) scale(var(--scale, 1)) rotate(0deg);
+  }
+  33% {
+    transform: translate(var(--tx, 30px), var(--ty, -30px)) scale(calc(var(--scale, 1) * 1.1)) rotate(120deg);
+  }
+  66% {
+    transform: translate(calc(var(--tx, 30px) * -0.5), calc(var(--ty, -30px) * -0.5)) scale(calc(var(--scale, 1) * 0.9)) rotate(240deg);
+  }
+  100% {
+    transform: translate(0, 0) scale(var(--scale, 1)) rotate(360deg);
+  }
+}
+
+.animate-float {
+  --tx: 30px;
+  --ty: -30px;
+  animation: float var(--duration, 15s) ease-in-out infinite;
+  animation-delay: var(--delay, 0ms);
+  transform: scale(var(--scale, 1));
+}
