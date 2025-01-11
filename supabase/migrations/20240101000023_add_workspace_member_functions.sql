@@ -1,3 +1,6 @@
+-- Drop existing function first
+drop function if exists public.get_workspace_members_with_details(uuid);
+
 -- Function to get workspace members with user details
 create or replace function public.get_workspace_members_with_details(target_workspace_id uuid)
 returns table (
@@ -6,7 +9,6 @@ returns table (
     username text,
     email text,
     avatar_url text,
-    status text,
     created_at timestamptz
 )
 language sql
@@ -20,7 +22,6 @@ as $$
         u.username,
         u.email,
         u.avatar_url,
-        u.status,
         u.created_at
     from workspace_memberships m
     join users u on u.id = m.user_id

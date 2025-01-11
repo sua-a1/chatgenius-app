@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useChannels } from '@/hooks/use-channels'
 import { useDirectMessages } from '@/hooks/use-direct-messages'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -18,6 +18,10 @@ import { ChannelManagement } from './channel-management'
 import { AdminPanel } from './admin-panel'
 import { UserProfileDisplay } from './user-profile-display'
 import type { UserProfile } from '@/contexts/auth-context'
+import { UserMenu } from '@/components/user-menu'
+import { useWorkspaceMembers } from '@/hooks/use-workspace-members'
+import { Command, CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command'
+import { UserAvatar } from '@/components/ui/user-avatar'
 
 interface WorkspacePageProps {
   workspace?: Workspace | null
@@ -40,6 +44,20 @@ export default function WorkspacePage({ workspace, workspaces, onOpenProfileSett
   const { channels, isLoading: isLoadingChannels, createChannel } = useChannels(workspace?.id)
   const { recentChats, isLoading: isLoadingDMs, refreshChats } = useDirectMessages(workspace?.id, null)
   const [displayProfile, setDisplayProfile] = useState(profile)
+  const { members, isLoading: isLoadingMembers } = useWorkspaceMembers(workspace?.id || null)
+  const [showMemberSearch, setShowMemberSearch] = useState(false)
+  const [memberSearchQuery, setMemberSearchQuery] = useState('')
+
+  const filteredMembers = useMemo(() => {
+    if (!members) return []
+    if (!memberSearchQuery.trim()) return members
+    
+    const query = memberSearchQuery.toLowerCase().trim()
+    return members.filter(member => 
+      member.username?.toLowerCase().includes(query) || 
+      member.email?.toLowerCase().includes(query)
+    )
+  }, [members, memberSearchQuery])
 
   // Update display profile when auth profile changes
   useEffect(() => {
@@ -92,23 +110,15 @@ export default function WorkspacePage({ workspace, workspaces, onOpenProfileSett
     }
   }
 
-  const handleAddDM = async () => {
-    if (!newDMEmail.trim()) {
-      toast({
-        variant: 'destructive',
-        title: 'Email required',
-        description: 'Please enter an email address.',
-      })
-      return
-    }
+  const handleAddDM = () => {
+    setShowMemberSearch(true)
+  }
 
-    // TODO: Implement adding DM by email
-    toast({
-      title: 'Not implemented',
-      description: 'This feature is not yet implemented.',
-    })
-    setNewDMEmail('')
-    setShowNewDM(false)
+  const handleSelectMember = async (userId: string) => {
+    setShowMemberSearch(false)
+    await onSelectDM(userId)
+    // Refresh the chats list to show the new conversation
+    refreshChats()
   }
 
   const handleTabChange = (value: string) => {
@@ -250,22 +260,14 @@ export default function WorkspacePage({ workspace, workspaces, onOpenProfileSett
                     )}
                     {showNewDM ? (
                       <div className="flex items-center gap-2 mt-2 px-2">
-                        <Input
-                          value={newDMEmail}
-                          onChange={(e) => setNewDMEmail(e.target.value)}
-                          placeholder="Enter email"
-                          className="flex-1 h-8"
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') {
-                              handleAddDM()
-                            } else if (e.key === 'Escape') {
-                              setNewDMEmail('')
-                              setShowNewDM(false)
-                            }
-                          }}
-                        />
-                        <Button size="sm" onClick={handleAddDM}>
-                          <PlusCircle className="h-4 w-4" />
+                        <Button 
+                          size="sm" 
+                          className="w-full justify-start h-8" 
+                          variant="ghost"
+                          onClick={handleAddDM}
+                        >
+                          <UserPlus className="h-4 w-4 mr-2" />
+                          New Message
                         </Button>
                         <Button 
                           variant="ghost" 
@@ -279,11 +281,12 @@ export default function WorkspacePage({ workspace, workspaces, onOpenProfileSett
                     ) : (
                       <Button
                         variant="ghost"
-                        className="w-full justify-start px-2"
+                        size="sm"
+                        className="w-full justify-start"
                         onClick={() => setShowNewDM(true)}
                       >
-                        <UserPlus className="mr-2 h-4 w-4" />
-                        <span>New Direct Message</span>
+                        <PlusCircle className="h-4 w-4 mr-2" />
+                        New Message
                       </Button>
                     )}
                   </div>
@@ -321,43 +324,45 @@ export default function WorkspacePage({ workspace, workspaces, onOpenProfileSett
       {/* User Profile Section - Fixed at bottom */}
       <div className="border-t border-gray-200 dark:border-gray-700 p-2">
         <div className={`flex ${isCollapsed ? 'justify-center' : 'flex-col items-center space-y-2'}`}>
-          <UserProfileDisplay
-            user={{
-              id: profile?.id || '',
-              username: profile?.username || '',
-              full_name: profile?.full_name || null,
-              avatar_url: profile?.avatar_url || null,
-              email: profile?.email,
-              created_at: profile?.created_at
-            }}
-            showDMButton={false}
-          >
-            <div className="flex flex-col items-center">
-              <Avatar 
-                className="h-10 w-10"
-                status={profile?.id ? userStatuses.get(profile.id) : undefined}
-              >
-                <AvatarImage src={profile?.avatar_url || undefined} />
-                <AvatarFallback>{profile?.username?.[0] || profile?.email?.[0]}</AvatarFallback>
-              </Avatar>
-              {!isCollapsed && (
-                <>
-                  <div className="flex flex-col items-center min-w-0">
-                    <span className="text-sm font-medium truncate">{profile?.full_name || profile?.username}</span>
-                    <span className="text-xs text-muted-foreground truncate">{profile?.email}</span>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <Button variant="ghost" size="icon" onClick={onOpenProfileSettings}>
-                      <Settings className="h-4 w-4" />
-                    </Button>
-                    <SignOutButton />
-                  </div>
-                </>
-              )}
-            </div>
-          </UserProfileDisplay>
+          <UserMenu onOpenProfileSettings={onOpenProfileSettings} isCollapsed={isCollapsed} />
         </div>
       </div>
+
+      <CommandDialog open={showMemberSearch} onOpenChange={setShowMemberSearch}>
+        <CommandInput 
+          placeholder="Search workspace members..." 
+          value={memberSearchQuery}
+          onValueChange={setMemberSearchQuery}
+        />
+        <CommandList>
+          <CommandEmpty>No members found.</CommandEmpty>
+          <CommandGroup heading="Workspace Members">
+            {filteredMembers?.map(member => (
+              <CommandItem
+                key={member.id}
+                value={`${member.username} ${member.email}`}
+                onSelect={() => handleSelectMember(member.id)}
+                className="cursor-pointer hover:bg-accent hover:text-accent-foreground"
+              >
+                <UserAvatar 
+                  user={{
+                    id: member.id,
+                    username: member.username,
+                    email: member.email,
+                    avatar_url: member.avatar_url,
+                    created_at: member.created_at
+                  }} 
+                  size="sm" 
+                />
+                <div className="ml-2">
+                  <div className="font-medium text-foreground">{member.username}</div>
+                  <div className="text-sm text-muted-foreground">{member.email}</div>
+                </div>
+              </CommandItem>
+            ))}
+          </CommandGroup>
+        </CommandList>
+      </CommandDialog>
     </div>
   )
 }

@@ -54,4 +54,24 @@ export interface Workspace {
   owner_id: string
   created_at: string
   updated_at: string
+}
+
+export interface User {
+  id: string
+  username: string
+  email: string
+  avatar: string | null
+  created_at: string
+}
+
+export interface WorkspaceMember {
+  id: string
+  workspace_id: string
+  user_id: string
+  role: 'member' | 'admin'
+  username: string
+  email: string
+  avatar_url: string | null
+  created_at: string
+  updated_at: string
 } 

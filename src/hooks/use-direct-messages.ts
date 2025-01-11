@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useAuth } from '@/contexts/auth-context'
 import { supabase } from '@/lib/supabase'
 import { useToast } from './use-toast'
@@ -96,7 +96,7 @@ export function useDirectMessages(workspaceId: string | undefined, selectedUserI
     debouncedLoadChats.current = setTimeout(() => {
       loadChats()
       debouncedLoadChats.current = null
-    }, 2000) // Increased delay to prevent interference
+    }, 500) // Reduced delay for better responsiveness
   }
 
   // Cleanup effect
@@ -601,6 +601,9 @@ export function useDirectMessages(workspaceId: string | undefined, selectedUserI
           })) : []
         }
         setMessages(prev => [...prev, newMessage])
+        
+        // Update chats list immediately after sending
+        loadChats()
       }
 
       console.log('DM Hook: Message sent successfully')
@@ -692,6 +695,46 @@ export function useDirectMessages(workspaceId: string | undefined, selectedUserI
       return false
     }
   }
+
+  const loadThreadMessages = useCallback(async (messageId: string) => {
+    const { data: directReplies } = await supabase
+      .from('messages')
+      .select(`
+        id,
+        channel_id,
+        user_id,
+        content,
+        reply_to,
+        reply_count,
+        created_at,
+        updated_at,
+        attachments,
+        user:users(id, username, avatar_url)
+      `)
+      .eq('reply_to', messageId)
+      .order('created_at', { ascending: true })
+
+    // Get replies to replies
+    const replyIds = directReplies?.map(m => m.id) || []
+    const { data: nestedReplies } = await supabase
+      .from('messages')
+      .select(`
+        id,
+        channel_id,
+        user_id,
+        content,
+        reply_to,
+        reply_count,
+        created_at,
+        updated_at,
+        attachments,
+        user:users(id, username, avatar_url)
+      `)
+      .in('reply_to', replyIds)
+      .order('created_at', { ascending: true })
+
+    return [...(directReplies || []), ...(nestedReplies || [])]
+  }, [])
 
   return {
     messages,

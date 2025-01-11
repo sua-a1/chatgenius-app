@@ -13,8 +13,9 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import type { UserStatus } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
-import { MessageSquare } from 'lucide-react'
+import { MessageSquare, Settings } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 import { useUserStatus } from '@/contexts/user-status-context'
 import type { UserProfile } from '@/contexts/auth-context'
@@ -44,9 +45,62 @@ interface UserProfileDisplayProps {
   onStartDM?: (userId: string) => void
   showDMButton?: boolean
   onClick?: (e: React.MouseEvent) => void
+  onOpenProfileSettings?: () => void
 }
 
-export function UserProfileDisplay({ user, children, onStartDM, showDMButton = true, onClick }: UserProfileDisplayProps) {
+// Memoized hover content component
+const UserHoverPreview = React.memo(({ 
+  user, 
+  userStatus, 
+  onStartDM, 
+  showDMButton 
+}: { 
+  user: DisplayUser, 
+  userStatus?: UserStatus,
+  onStartDM?: (userId: string) => void,
+  showDMButton?: boolean
+}) => (
+  <div className="flex items-center justify-between">
+    <div className="flex items-center gap-2">
+      <Avatar className="h-10 w-10" status={userStatus}>
+        <AvatarImage src={user.avatar_url || undefined} />
+        <AvatarFallback>
+          {user.username ? user.username[0].toUpperCase() : '?'}
+        </AvatarFallback>
+      </Avatar>
+      <div>
+        <p className="text-sm font-medium">{user.username || 'Unknown User'}</p>
+        <div className="flex items-center gap-1.5">
+          <span className={`h-2 w-2 rounded-full ${
+            userStatus === 'online' ? 'bg-green-500' :
+            userStatus === 'away' ? 'bg-yellow-500' :
+            userStatus === 'busy' ? 'bg-red-500' :
+            'bg-gray-500'
+          }`} />
+          <p className="text-xs text-muted-foreground">
+            {userStatus ? userStatus.charAt(0).toUpperCase() + userStatus.slice(1) : 'Offline'}
+          </p>
+        </div>
+      </div>
+    </div>
+    {showDMButton && onStartDM && (
+      <Button
+        size="sm"
+        className="h-8"
+        onClick={(e) => {
+          e.preventDefault()
+          e.stopPropagation()
+          onStartDM(user.id)
+        }}
+      >
+        <MessageSquare className="h-4 w-4" />
+      </Button>
+    )}
+  </div>
+))
+UserHoverPreview.displayName = 'UserHoverPreview'
+
+export function UserProfileDisplay({ user, children, onStartDM, showDMButton = true, onClick, onOpenProfileSettings }: UserProfileDisplayProps) {
   const { userStatuses } = useUserStatus()
   const { toast } = useToast()
   const userStatus = userStatuses.get(user.id)
@@ -64,6 +118,11 @@ export function UserProfileDisplay({ user, children, onStartDM, showDMButton = t
   // Always fetch complete user information
   useEffect(() => {
     const fetchUserInfo = async () => {
+      if (!user.id) {
+        setIsLoading(false)
+        return
+      }
+
       setIsLoading(true)
       try {
         const { data, error } = await supabase
@@ -72,7 +131,13 @@ export function UserProfileDisplay({ user, children, onStartDM, showDMButton = t
           .eq('id', user.id)
           .single()
 
-        if (error) throw error
+        if (error) {
+          if (error.code === '22P02') {
+            setIsLoading(false)
+            return
+          }
+          throw error
+        }
 
         if (data) {
           setDisplayUser({
@@ -86,11 +151,13 @@ export function UserProfileDisplay({ user, children, onStartDM, showDMButton = t
         }
       } catch (error) {
         console.error('Error fetching user details:', error)
-        toast({
-          variant: 'destructive',
-          title: 'Error loading user details',
-          description: 'Could not load complete user information.',
-        })
+        if ((error as any)?.code !== '22P02') {
+          toast({
+            variant: 'destructive',
+            title: 'Error loading user details',
+            description: 'Could not load complete user information.',
+          })
+        }
       } finally {
         setIsLoading(false)
       }
@@ -119,81 +186,40 @@ export function UserProfileDisplay({ user, children, onStartDM, showDMButton = t
     }
   }, [user.id])
 
-  const handleClick = (e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (onClick) {
-      onClick(e);
-    } else {
-      setIsDialogOpen(true);
-    }
-  };
-
-  const Trigger = React.forwardRef<HTMLDivElement, React.HTMLProps<HTMLDivElement>>((props, ref) => (
-    <div
-      {...props}
-      ref={ref}
-      onClick={handleClick}
-      className="cursor-pointer"
-    >
-      {children}
-    </div>
-  ));
-  Trigger.displayName = 'Trigger';
-
   return (
     <>
-      <HoverCard openDelay={200} closeDelay={100}>
-        <HoverCardTrigger asChild>
-          <Trigger />
-        </HoverCardTrigger>
-        <HoverCardContent 
-          className="z-[100] w-60" 
-          align="start"
-          side="right"
-          avoidCollisions={true}
-          sideOffset={5}
-        >
-          <div className="flex items-center justify-between space-x-4 cursor-pointer" onClick={handleClick}>
-            <div className="flex items-center space-x-3">
-              <Avatar className="h-10 w-10" status={userStatus}>
-                <AvatarImage src={displayUser.avatar_url || undefined} />
-                <AvatarFallback>
-                  {displayUser.username[0].toUpperCase()}
-                </AvatarFallback>
-              </Avatar>
-              <div>
-                <p className="text-sm font-medium">{displayUser.username}</p>
-                <div className="flex items-center gap-1.5">
-                  <span className={`h-2 w-2 rounded-full ${
-                    userStatus === 'online' ? 'bg-green-500' :
-                    userStatus === 'away' ? 'bg-yellow-500' :
-                    userStatus === 'busy' ? 'bg-red-500' :
-                    'bg-gray-500'
-                  }`} />
-                  <p className="text-xs text-muted-foreground">
-                    {userStatus ? userStatus.charAt(0).toUpperCase() + userStatus.slice(1) : 'Offline'}
-                  </p>
-                </div>
-              </div>
+      <div 
+        onClick={(e) => {
+          if (onClick) {
+            onClick(e)
+          } else {
+            setIsDialogOpen(true)
+          }
+        }}
+        className="relative group"
+      >
+        <HoverCard>
+          <HoverCardTrigger asChild>
+            <div className="cursor-pointer">
+              {children}
             </div>
-            {showDMButton && onStartDM && (
-              <Button
-                size="sm"
-                variant="ghost"
-                className="h-8"
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  onStartDM(displayUser.id);
-                }}
-              >
-                <MessageSquare className="h-4 w-4" />
-              </Button>
-            )}
-          </div>
-        </HoverCardContent>
-      </HoverCard>
+          </HoverCardTrigger>
+          <HoverCardContent 
+            className="z-[100] w-60" 
+            align="start"
+            side="right"
+            avoidCollisions={true}
+            sideOffset={5}
+          >
+            <UserHoverPreview 
+              user={displayUser}
+              userStatus={userStatus}
+              onStartDM={onStartDM}
+              showDMButton={showDMButton}
+            />
+          </HoverCardContent>
+        </HoverCard>
+      </div>
 
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <DialogContent className="sm:max-w-[425px]">
@@ -210,12 +236,12 @@ export function UserProfileDisplay({ user, children, onStartDM, showDMButton = t
                 <Avatar className="h-20 w-20" status={userStatus}>
                   <AvatarImage src={displayUser.avatar_url || undefined} />
                   <AvatarFallback className="text-2xl">
-                    {displayUser.full_name?.[0] || displayUser.username[0].toUpperCase()}
+                    {displayUser.full_name?.[0] || displayUser.username?.[0] || '?'}
                   </AvatarFallback>
                 </Avatar>
                 <div className="space-y-1">
-                  <h2 className="text-2xl font-semibold">{displayUser.full_name || displayUser.username}</h2>
-                  {displayUser.full_name && (
+                  <h2 className="text-2xl font-semibold">{displayUser.full_name || displayUser.username || 'Unknown User'}</h2>
+                  {displayUser.full_name && displayUser.username && (
                     <p className="text-sm text-muted-foreground">@{displayUser.username}</p>
                   )}
                   <div className="flex items-center gap-2">
@@ -250,22 +276,35 @@ export function UserProfileDisplay({ user, children, onStartDM, showDMButton = t
                 )}
               </div>
 
-              {showDMButton && onStartDM && (
-                <div className="flex justify-end">
+              <div className="flex justify-end gap-2">
+                {showDMButton && onStartDM && (
                   <Button
                     onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      onStartDM(displayUser.id);
-                      setIsDialogOpen(false);
+                      e.preventDefault()
+                      e.stopPropagation()
+                      onStartDM(displayUser.id)
+                      setIsDialogOpen(false)
                     }}
-                    className="w-full sm:w-auto"
                   >
                     <MessageSquare className="h-4 w-4 mr-2" />
                     Send Message
                   </Button>
-                </div>
-              )}
+                )}
+                {onOpenProfileSettings && (
+                  <Button
+                    onClick={(e) => {
+                      e.preventDefault()
+                      e.stopPropagation()
+                      onOpenProfileSettings()
+                      setIsDialogOpen(false)
+                    }}
+                    variant="secondary"
+                  >
+                    <Settings className="h-4 w-4 mr-2" />
+                    Edit Profile
+                  </Button>
+                )}
+              </div>
             </div>
           )}
         </DialogContent>

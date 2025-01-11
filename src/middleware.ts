@@ -18,6 +18,7 @@ export async function middleware(req: NextRequest) {
 
   // Auth condition
   const isAuthPage = req.nextUrl.pathname.startsWith('/auth')
+  const isSignOutPage = req.nextUrl.pathname === '/auth/sign-out'
   
   if (!session && !isAuthPage) {
     // Redirect unauthenticated users to login page
@@ -26,8 +27,9 @@ export async function middleware(req: NextRequest) {
     return NextResponse.redirect(redirectUrl)
   }
 
-  if (session && isAuthPage) {
+  if (session && isAuthPage && !isSignOutPage) {
     // Redirect authenticated users to home page if they try to access auth pages
+    // except for the sign-out page
     const redirectUrl = new URL('/', req.url)
     console.log('Redirecting to:', redirectUrl.toString())
     return NextResponse.redirect(redirectUrl)

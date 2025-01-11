@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { formatDistanceToNow } from 'date-fns'
-import { Edit, MoreVertical, Trash } from 'lucide-react'
+import { Edit, MoreVertical, Trash, X } from 'lucide-react'
 import { MessageReactions } from './message-reactions'
 import {
   DropdownMenu,
@@ -15,20 +15,24 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { UserProfileDisplay } from './user-profile-display'
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar'
 import { FileUpload } from './ui/file-upload'
 import { FilePreview } from './ui/file-preview'
+import { UserAvatar, UserName } from '@/components/ui/user-avatar'
+import { useUserStatus } from '@/contexts/user-status-context'
+import { UserProfileDisplay } from '@/components/user-profile-display'
 
 interface DirectMessageAreaProps {
   workspace: {
     id: string
   } | null
   selectedUserId: string | null
+  onClose?: () => void
 }
 
-export default function DirectMessageArea({ workspace, selectedUserId }: DirectMessageAreaProps) {
+export default function DirectMessageArea({ workspace, selectedUserId, onClose }: DirectMessageAreaProps) {
   const { profile } = useAuth()
+  const { userStatuses } = useUserStatus()
   const { messages, selectedUser, isLoading, sendMessage, deleteMessage, editMessage } = useDirectMessages(workspace?.id, selectedUserId)
   const [newMessage, setNewMessage] = useState('')
   const [editingMessage, setEditingMessage] = useState<{ id: string, content: string } | null>(null)
@@ -112,18 +116,34 @@ export default function DirectMessageArea({ workspace, selectedUserId }: DirectM
     <div className="flex flex-col h-full">
       <div className="border-b px-4 py-2">
         {selectedUser && (
-          <UserProfileDisplay
-            user={selectedUser}
-            showDMButton={false}
-          >
-            <div className="flex items-center space-x-2 cursor-pointer">
-              <Avatar className="h-8 w-8">
-                <AvatarImage src={selectedUser.avatar_url || undefined} />
-                <AvatarFallback>{selectedUser.username[0].toUpperCase()}</AvatarFallback>
-              </Avatar>
-              <h2 className="font-semibold">{selectedUser.username}</h2>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-2">
+              <UserAvatar 
+                user={selectedUser}
+                size="sm"
+                status={userStatuses.get(selectedUser.id)}
+                showDMButton={false}
+              />
+              <UserName
+                user={selectedUser}
+                showDMButton={false}
+                className="font-semibold"
+              />
             </div>
-          </UserProfileDisplay>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => {
+                if (selectedUserId) {
+                  window.history.pushState({}, '', `/app/workspaces/${workspace?.id}`);
+                  onClose?.();
+                }
+              }}
+              className="h-8 w-8"
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
         )}
       </div>
 
@@ -155,23 +175,24 @@ export default function DirectMessageArea({ workspace, selectedUserId }: DirectM
                 >
                   {shouldShowHeader && (
                     <div className="flex items-center space-x-2 mb-1">
-                      <UserProfileDisplay
-                        user={message.sender}
-                        showDMButton={false}
-                      >
-                        <div className="flex items-center space-x-2">
-                          <Avatar className="h-10 w-10">
-                            <AvatarImage src={message.sender.avatar_url || undefined} />
-                            <AvatarFallback>{message.sender.username[0].toUpperCase()}</AvatarFallback>
-                          </Avatar>
-                          <div className="flex items-baseline space-x-2">
-                            <span className="font-semibold">{message.sender.username}</span>
-                            <span className="text-xs text-muted-foreground">
-                              {formatDistanceToNow(new Date(message.created_at), { addSuffix: true })}
-                            </span>
-                          </div>
+                      <div className="flex items-center space-x-2">
+                        <UserAvatar 
+                          user={message.sender}
+                          size="sm"
+                          status={userStatuses.get(message.sender.id)}
+                          showDMButton={false}
+                        />
+                        <div className="flex items-baseline space-x-2">
+                          <UserName
+                            user={message.sender}
+                            showDMButton={false}
+                            className="font-semibold"
+                          />
+                          <span className="text-xs text-muted-foreground">
+                            {formatDistanceToNow(new Date(message.created_at), { addSuffix: true })}
+                          </span>
                         </div>
-                      </UserProfileDisplay>
+                      </div>
                     </div>
                   )}
                   <div className="flex items-start pl-12">

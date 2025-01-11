@@ -28,34 +28,33 @@ export function useWorkspaces() {
       console.log('Loading workspaces for user:', profile.id)
       loadWorkspaces()
 
-      // Set up realtime subscriptions
+      // Set up realtime subscriptions with unique channel names
       const workspacesChannel = supabase
-        .channel('workspaces')
+        .channel('workspaces-' + profile.id)
         .on(
           'postgres_changes',
           {
             event: '*',
             schema: 'public',
-            table: 'workspaces',
+            table: 'workspaces'
           },
-          async () => {
-            await loadWorkspaces()
+          () => {
+            loadWorkspaces()
           }
         )
         .subscribe()
 
       const membershipsChannel = supabase
-        .channel('workspace_memberships')
+        .channel('memberships-' + profile.id)
         .on(
           'postgres_changes',
           {
             event: '*',
             schema: 'public',
-            table: 'workspace_memberships',
-            filter: `user_id=eq.${profile.id}`,
+            table: 'workspace_memberships'
           },
-          async () => {
-            await loadWorkspaces()
+          () => {
+            loadWorkspaces()
           }
         )
         .subscribe()
@@ -67,26 +66,62 @@ export function useWorkspaces() {
       }
     } else {
       console.log('No profile ID available')
+      setWorkspaces([])
+      setIsLoading(false)
     }
   }, [profile?.id])
 
   const loadWorkspaces = async () => {
     try {
-      setIsLoading(true)
-      console.log('Starting to load workspaces...')
-
-      // Get all accessible workspaces from the secure view
-      const { data: workspaces, error } = await supabase
-        .from('accessible_workspaces')
-        .select('*')
-
-      if (error) {
-        console.error('Error loading workspaces:', error)
-        throw error
+      if (!profile?.id) {
+        console.log('No profile ID available, skipping workspace load')
+        setWorkspaces([])
+        setIsLoading(false)
+        return
       }
 
-      console.log('All workspaces:', workspaces)
-      setWorkspaces(workspaces || [])
+      setIsLoading(true)
+      console.log('Starting to load workspaces for user:', profile.id)
+
+      // First query: Get workspaces where user is owner
+      const { data: ownedWorkspaces, error: ownedError } = await supabase
+        .from('workspaces')
+        .select('id, name, owner_id, created_at, updated_at')
+        .eq('owner_id', profile.id)
+
+      if (ownedError) throw ownedError
+
+      // Second query: Get workspaces where user is a member
+      type WorkspaceMembership = {
+        workspace_id: string;
+        workspaces: Workspace;
+      }
+
+      const { data: memberWorkspaces, error: memberError } = await supabase
+        .from('workspace_memberships')
+        .select(`
+          workspace_id,
+          workspaces:workspaces!inner (
+            id,
+            name,
+            owner_id,
+            created_at,
+            updated_at
+          )
+        `)
+        .eq('user_id', profile.id) as { data: WorkspaceMembership[] | null; error: any }
+
+      if (memberError) throw memberError
+
+      // Combine and deduplicate workspaces
+      const memberWorkspacesData = memberWorkspaces?.map(m => m.workspaces) || []
+      const allWorkspaces = [...(ownedWorkspaces || []), ...memberWorkspacesData]
+      const uniqueWorkspaces = Array.from(
+        new Map(allWorkspaces.map(w => [w.id, w])).values()
+      )
+
+      console.log('Loaded workspaces:', uniqueWorkspaces)
+      setWorkspaces(uniqueWorkspaces)
     } catch (error) {
       console.error('Error loading workspaces:', error)
       toast({
@@ -100,95 +135,86 @@ export function useWorkspaces() {
   }
 
   const createWorkspace = async (name: string) => {
-    if (!profile?.id) return null
-
     try {
-      // Call the function to create workspace and membership atomically
-      const { data: workspaceId, error: functionError } = await supabase
-        .rpc('create_workspace_with_membership', {
-          workspace_name: name,
-          owner_id: profile.id
-        })
+      if (!profile?.id) {
+        throw new Error('No profile ID available')
+      }
 
-      if (functionError) throw functionError
-
-      // Get the created workspace data
-      const { data: workspace, error: workspaceError } = await supabase
+      const { data: workspace, error } = await supabase
         .from('workspaces')
-        .select('*')
-        .eq('id', workspaceId)
-        .single()
-
-      if (workspaceError) throw workspaceError
-
-      setWorkspaces(prev => [...prev, workspace])
-      return workspace
-    } catch (error) {
-      console.error('Error creating workspace:', error)
-      toast({
-        variant: 'destructive',
-        title: 'Error creating workspace',
-        description: error instanceof Error ? error.message : 'Please try again later.',
-      })
-      return null
-    }
-  }
-
-  const updateWorkspace = async (id: string, name: string) => {
-    try {
-      const { data, error } = await supabase
-        .from('workspaces')
-        .update({ 
-          name, 
-          updated_at: new Date().toISOString() 
-        })
-        .eq('id', id)
+        .insert([
+          { name, owner_id: profile.id }
+        ])
         .select()
         .single()
 
       if (error) throw error
 
-      setWorkspaces(prev => 
-        prev.map(w => w.id === id ? data : w)
-      )
-      return data
-    } catch (error) {
-      console.error('Error updating workspace:', error)
+      // Add the creator as a member
+      const { error: membershipError } = await supabase
+        .from('workspace_memberships')
+        .insert([
+          { workspace_id: workspace.id, user_id: profile.id }
+        ])
+
+      if (membershipError) throw membershipError
+
+      toast({
+        title: 'Workspace created',
+        description: `${name} has been created successfully.`,
+      })
+
+      return workspace
+    } catch (error: any) {
+      console.error('Error creating workspace:', error)
       toast({
         variant: 'destructive',
-        title: 'Error updating workspace',
-        description: 'Please try again later.',
+        title: 'Error creating workspace',
+        description: error?.message || 'An unexpected error occurred. Please try again.',
       })
       return null
     }
   }
 
-  const deleteWorkspace = async (id: string) => {
+  const deleteWorkspace = async (workspaceId: string) => {
     try {
-      // Delete workspace memberships first (due to foreign key constraint)
-      const { error: membershipError } = await supabase
-        .from('workspace_memberships')
-        .delete()
-        .eq('workspace_id', id)
+      if (!profile?.id) {
+        throw new Error('No profile ID available')
+      }
 
-      if (membershipError) throw membershipError
-
-      // Then delete the workspace
-      const { error: workspaceError } = await supabase
+      // First check if the user is the owner
+      const { data: workspace, error: workspaceError } = await supabase
         .from('workspaces')
-        .delete()
-        .eq('id', id)
+        .select('owner_id')
+        .eq('id', workspaceId)
+        .single()
 
       if (workspaceError) throw workspaceError
 
-      setWorkspaces(prev => prev.filter(w => w.id !== id))
+      if (workspace.owner_id !== profile.id) {
+        throw new Error('Only the workspace owner can delete the workspace')
+      }
+
+      // Delete the workspace (this will cascade to memberships and channels)
+      const { error: deleteError } = await supabase
+        .from('workspaces')
+        .delete()
+        .eq('id', workspaceId)
+
+      if (deleteError) throw deleteError
+
+      toast({
+        title: 'Workspace deleted',
+        description: 'The workspace has been deleted successfully.',
+      })
+
       return true
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error deleting workspace:', error)
       toast({
         variant: 'destructive',
         title: 'Error deleting workspace',
-        description: 'Please try again later.',
+        description: error?.message || 'An unexpected error occurred. Please try again.',
       })
       return false
     }
@@ -198,9 +224,7 @@ export function useWorkspaces() {
     workspaces,
     isLoading,
     createWorkspace,
-    updateWorkspace,
-    deleteWorkspace,
-    refreshWorkspaces: loadWorkspaces,
+    deleteWorkspace
   }
 }
 

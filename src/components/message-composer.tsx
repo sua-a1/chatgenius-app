@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { FileUpload } from '@/components/ui/file-upload'
@@ -15,6 +15,10 @@ interface MessageComposerProps {
   directMessageId?: string
   userId: string
   disabled?: boolean
+  editingContent?: string | null
+  onEditChange?: (content: string) => void
+  onSaveEdit?: () => void
+  onCancelEdit?: () => void
 }
 
 export function MessageComposer({
@@ -25,16 +29,31 @@ export function MessageComposer({
   channelId,
   directMessageId,
   userId,
-  disabled = false
+  disabled = false,
+  editingContent = null,
+  onEditChange,
+  onSaveEdit,
+  onCancelEdit
 }: MessageComposerProps) {
-  const [message, setMessage] = useState('')
+  const [message, setMessage] = useState(editingContent || '')
   const [isAttaching, setIsAttaching] = useState(false)
   const [attachments, setAttachments] = useState<Array<{ url: string; filename: string }>>([])
   const formRef = useRef<HTMLFormElement>(null)
 
+  useEffect(() => {
+    if (editingContent !== null) {
+      setMessage(editingContent)
+    }
+  }, [editingContent])
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!message.trim() && attachments.length === 0) return
+
+    if (editingContent !== null && onSaveEdit) {
+      onSaveEdit()
+      return
+    }
 
     const success = await onSendMessage(
       message.trim(),
@@ -44,6 +63,14 @@ export function MessageComposer({
     if (success) {
       setMessage('')
       setAttachments([])
+    }
+  }
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newContent = e.target.value
+    setMessage(newContent)
+    if (editingContent !== null && onEditChange) {
+      onEditChange(newContent)
     }
   }
 
@@ -96,7 +123,7 @@ export function MessageComposer({
         <div className="flex-1 space-y-2">
           <Input
             value={message}
-            onChange={e => setMessage(e.target.value)}
+            onChange={handleChange}
             placeholder={placeholder}
             disabled={disabled}
             className="flex-1"
@@ -104,20 +131,25 @@ export function MessageComposer({
               if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault()
                 formRef.current?.requestSubmit()
+              } else if (e.key === 'Escape' && editingContent !== null && onCancelEdit) {
+                e.preventDefault()
+                onCancelEdit()
               }
             }}
           />
         </div>
         <div className="flex space-x-2">
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            onClick={() => setIsAttaching(true)}
-            disabled={disabled || isAttaching}
-          >
-            <Paperclip className="h-4 w-4" />
-          </Button>
+          {!editingContent && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              onClick={() => setIsAttaching(true)}
+              disabled={disabled || isAttaching}
+            >
+              <Paperclip className="h-4 w-4" />
+            </Button>
+          )}
           <Button
             type="submit"
             size="icon"
@@ -125,6 +157,16 @@ export function MessageComposer({
           >
             <Send className="h-4 w-4" />
           </Button>
+          {editingContent !== null && onCancelEdit && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              onClick={onCancelEdit}
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          )}
         </div>
       </form>
     </div>

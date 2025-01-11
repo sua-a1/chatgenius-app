@@ -1,5 +1,4 @@
 import { useDirectMessages } from '@/hooks/use-direct-messages'
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -7,6 +6,7 @@ import { formatDistanceToNow } from 'date-fns'
 import { Send, Trash2 } from 'lucide-react'
 import { useState, useLayoutEffect, useRef } from 'react'
 import { useAuth } from '@/contexts/auth-context'
+import { UserAvatar, UserName } from '@/components/ui/user-avatar'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -19,6 +19,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import { useUserStatus } from '@/contexts/user-status-context'
 import { cn } from '@/lib/utils'
+import { UserProfileDisplay } from '@/components/user-profile-display'
 
 interface DirectMessagesProps {
   workspaceId: string
@@ -67,22 +68,36 @@ export function DirectMessages({ workspaceId, selectedUserId, onSelectUser }: Di
           <h2 className="font-semibold mb-2">Direct Messages</h2>
           <div className="space-y-2">
             {recentChats.map((chat) => (
-              <button
+              <div
                 key={chat.user_id}
-                onClick={() => onSelectUser(chat.user_id)}
-                className={`flex items-center space-x-2 w-full p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-800 ${
+                className={cn(
+                  'flex items-center space-x-2 w-full p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-800',
                   selectedUserId === chat.user_id ? 'bg-gray-100 dark:bg-gray-800' : ''
-                }`}
+                )}
+                onClick={() => onSelectUser(chat.user_id)}
               >
-                <Avatar 
-                  className="h-8 w-8"
+                <UserAvatar 
+                  user={{
+                    id: chat.user_id,
+                    username: chat.username,
+                    avatar_url: chat.avatar_url,
+                  }}
+                  size="sm"
                   status={userStatuses.get(chat.user_id)}
-                >
-                  <AvatarImage src={chat.avatar_url || undefined} />
-                  <AvatarFallback>{chat.username[0].toUpperCase()}</AvatarFallback>
-                </Avatar>
-                <span className="text-sm">{chat.username}</span>
-              </button>
+                  showDMButton={false}
+                  onClick={(e) => e.stopPropagation()}
+                />
+                <UserName 
+                  user={{
+                    id: chat.user_id,
+                    username: chat.username,
+                    avatar_url: chat.avatar_url,
+                  }}
+                  showDMButton={false}
+                  onClick={(e) => e.stopPropagation()}
+                  className="text-sm"
+                />
+              </div>
             ))}
           </div>
         </div>
@@ -108,16 +123,22 @@ export function DirectMessages({ workspaceId, selectedUserId, onSelectUser }: Di
                         message.sender_id === selectedUserId ? 'flex-row' : 'flex-row-reverse space-x-reverse'
                       }`}
                     >
-                      <Avatar 
-                        className="h-8 w-8 mt-1"
-                        status={userStatuses.get(message.sender_id)}
-                      >
-                        <AvatarImage src={message.sender.avatar_url || undefined} />
-                        <AvatarFallback>{message.sender.username[0].toUpperCase()}</AvatarFallback>
-                      </Avatar>
+                      <div className="flex items-center space-x-2">
+                        <UserAvatar 
+                          user={message.sender}
+                          size="sm"
+                          status={userStatuses.get(message.sender_id)}
+                          showDMButton={false}
+                          className="mt-1"
+                        />
+                      </div>
                       <div className={`flex flex-col ${message.sender_id === selectedUserId ? 'items-start' : 'items-end'}`}>
                         <div className="flex items-center space-x-2">
-                          <span className="text-sm font-medium">{message.sender.username}</span>
+                          <UserName
+                            user={message.sender}
+                            showDMButton={false}
+                            className="text-sm font-medium"
+                          />
                           <span className="text-xs text-gray-500">
                             {formatDistanceToNow(new Date(message.created_at), { addSuffix: true })}
                           </span>

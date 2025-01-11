@@ -360,8 +360,8 @@ export function useChannelMessages(workspaceId: string | undefined, selectedChan
     if (!selectedChannelId) return []
 
     try {
-      // First, get all messages that are direct replies to this thread
-      const { data: threadData, error: threadError } = await supabase
+      // First, get all messages that are direct replies to this thread (depth 1)
+      const { data: directReplies, error: directError } = await supabase
         .from('messages')
         .select(`
           *,
@@ -372,10 +372,10 @@ export function useChannelMessages(workspaceId: string | undefined, selectedChan
         .eq('reply_to', parentMessageId)
         .order('created_at', { ascending: true })
 
-      if (threadError) throw threadError
+      if (directError) throw directError
 
-      // Get all replies to any message in the thread
-      const threadMessageIds = threadData.map(msg => msg.id)
+      // Get replies to direct replies (depth 2)
+      const directReplyIds = directReplies.map(msg => msg.id)
       const { data: nestedReplies, error: nestedError } = await supabase
         .from('messages')
         .select(`
@@ -384,22 +384,28 @@ export function useChannelMessages(workspaceId: string | undefined, selectedChan
           message_reactions_with_users(*)
         `)
         .eq('channel_id', selectedChannelId)
-        .in('reply_to', threadMessageIds)
+        .in('reply_to', directReplyIds)
         .order('created_at', { ascending: true })
 
       if (nestedError) throw nestedError
 
-      // Combine and deduplicate messages
-      const allMessages = [...threadData, ...(nestedReplies || [])]
-      const uniqueMessages = Array.from(
-        new Map(allMessages.map(msg => [msg.id, msg])).values()
-      )
+      // Combine messages and add depth information
+      const allMessages = [
+        ...directReplies.map(msg => ({ ...msg, depth: 1 })),
+        ...(nestedReplies || []).map(msg => ({ ...msg, depth: 2 }))
+      ]
 
-      return uniqueMessages.map(message => ({
+      // Create a map for quick lookup of messages
+      const messageMap = new Map(allMessages.map(msg => [msg.id, msg]))
+
+      // Format messages with proper structure
+      return allMessages.map(message => ({
         ...message,
         user: message.user,
         reactions: message.message_reactions_with_users || [],
-        attachments: message.attachments || []
+        attachments: message.attachments || [],
+        // Only show reply count for depth 2 messages that have replies
+        reply_count: message.depth === 2 ? message.reply_count : 0
       }))
     } catch (error) {
       console.error('Error loading thread messages:', error)

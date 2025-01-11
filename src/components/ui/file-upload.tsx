@@ -42,28 +42,28 @@ export function FileUpload({ workspaceId, onFilesSelected, onError, disabled }: 
   }
 
   const uploadFile = useCallback(async (file: File): Promise<string | null> => {
-    const fileExt = file.name.split('.').pop()
-    const fileName = `${workspaceId}/${Math.random().toString(36).slice(2)}.${fileExt}`
+        const fileExt = file.name.split('.').pop()
+        const fileName = `${workspaceId}/${Math.random().toString(36).slice(2)}.${fileExt}`
 
     try {
       // Compress file if possible
       const compressedFile = await compressFile(file)
 
       // Upload file with progress tracking
-      const { data, error } = await supabase.storage
-        .from('chat_attachments')
+        const { data, error } = await supabase.storage
+          .from('chat_attachments')
         .upload(fileName, compressedFile, {
           cacheControl: '3600',
           upsert: false,
           contentType: file.type
         })
 
-      if (error) throw error
+        if (error) throw error
 
       // Get public URL
-      const { data: { publicUrl } } = supabase.storage
-        .from('chat_attachments')
-        .getPublicUrl(data.path)
+        const { data: { publicUrl } } = supabase.storage
+          .from('chat_attachments')
+          .getPublicUrl(data.path)
 
       return publicUrl
     } catch (error) {
@@ -196,7 +196,7 @@ export function FileUpload({ workspaceId, onFilesSelected, onError, disabled }: 
               <div className="flex items-center justify-between text-sm text-muted-foreground">
                 <span className="max-w-[200px] truncate">{file.file.name}</span>
                 <span>{formatFileSize(file.file.size)}</span>
-              </div>
+        </div>
               <Progress value={file.progress} className="h-1" />
             </div>
           ))}

@@ -5,9 +5,10 @@ import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Loader2, Trash2 } from 'lucide-react'
+import { Loader2, Trash2, Hash } from 'lucide-react'
 import { useWorkspaceMembers } from '@/hooks/use-workspace-members'
 import { useWorkspaces } from '@/hooks/use-workspaces'
+import { useChannels } from '@/hooks/use-channels'
 import { Workspace } from '@/types'
 import {
   AlertDialog,
@@ -42,11 +43,18 @@ export function AdminPanel({ workspaces = [], onDeleteWorkspace }: AdminPanelPro
 
   const {
     members,
-    isLoading,
+    isLoading: isLoadingMembers,
     addMember,
     updateMemberRole,
-    removeMember
+    removeMember,
+    isAdmin
   } = useWorkspaceMembers(selectedWorkspace?.id || null)
+
+  const {
+    channels,
+    isLoading: isLoadingChannels,
+    deleteChannel
+  } = useChannels(selectedWorkspace?.id)
 
   const handleAddUser = async () => {
     if (!newUserEmail.trim()) return
@@ -66,6 +74,11 @@ export function AdminPanel({ workspaces = [], onDeleteWorkspace }: AdminPanelPro
     if (success) {
       setSelectedWorkspace(null)
     }
+  }
+
+  const handleDeleteChannel = async (channelId: string) => {
+    if (!selectedWorkspace || !isAdmin) return
+    await deleteChannel(channelId)
   }
 
   return (
@@ -102,28 +115,32 @@ export function AdminPanel({ workspaces = [], onDeleteWorkspace }: AdminPanelPro
                 <AlertDialogHeader>
                   <AlertDialogTitle>Delete Workspace</AlertDialogTitle>
                   <AlertDialogDescription>
-                    Are you sure you want to delete "{selectedWorkspace.name}"? This action cannot be undone.
-                    All channels, messages, and data associated with this workspace will be permanently deleted.
+                    Are you sure you want to delete this workspace? This action cannot be undone.
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
                   <AlertDialogCancel>Cancel</AlertDialogCancel>
-                  <AlertDialogAction onClick={handleDeleteWorkspace} className="bg-destructive text-destructive-foreground">
-                    Delete Workspace
-                  </AlertDialogAction>
+                  <AlertDialogAction onClick={handleDeleteWorkspace}>Delete</AlertDialogAction>
                 </AlertDialogFooter>
               </AlertDialogContent>
             </AlertDialog>
           )}
         </div>
       </div>
-      {selectedWorkspace ? (
-        <Tabs defaultValue="users">
+
+      {selectedWorkspace && (
+        <Tabs defaultValue="members" className="space-y-4">
           <TabsList>
-            <TabsTrigger value="users">User Management</TabsTrigger>
-            <TabsTrigger value="settings">Workspace Settings</TabsTrigger>
+            <TabsTrigger value="members">Members</TabsTrigger>
+            {isAdmin && (
+              <>
+                <TabsTrigger value="channels">Channels</TabsTrigger>
+                <TabsTrigger value="settings">Settings</TabsTrigger>
+              </>
+            )}
           </TabsList>
-          <TabsContent value="users">
+
+          <TabsContent value="members">
             <div className="mb-4">
               <h3 className="text-lg font-semibold mb-2">Add New User</h3>
               <div className="flex space-x-2">
@@ -145,7 +162,7 @@ export function AdminPanel({ workspaces = [], onDeleteWorkspace }: AdminPanelPro
               </div>
             </div>
             <ScrollArea className="h-[400px] border rounded p-4">
-              {isLoading ? (
+              {isLoadingMembers ? (
                 <div className="flex justify-center items-center h-full">
                   <Loader2 className="h-6 w-6 animate-spin" />
                 </div>
@@ -185,30 +202,80 @@ export function AdminPanel({ workspaces = [], onDeleteWorkspace }: AdminPanelPro
               )}
             </ScrollArea>
           </TabsContent>
-          <TabsContent value="settings">
-            <div className="space-y-4">
-              <div>
-                <Label htmlFor="maxChannelsPerUser">Max Channels Per User</Label>
-                <Input
-                  id="maxChannelsPerUser"
-                  type="number"
-                  value={workspaceSettings.maxChannelsPerUser}
-                  onChange={(e) => setWorkspaceSettings({ ...workspaceSettings, maxChannelsPerUser: parseInt(e.target.value) })}
-                />
-              </div>
-              <div className="flex items-center space-x-2">
-                <Switch
-                  id="requireChannelApproval"
-                  checked={workspaceSettings.requireChannelApproval}
-                  onCheckedChange={(checked) => setWorkspaceSettings({ ...workspaceSettings, requireChannelApproval: checked })}
-                />
-                <Label htmlFor="requireChannelApproval">Require Channel Approval</Label>
-              </div>
-            </div>
-          </TabsContent>
+
+          {isAdmin && (
+            <>
+              <TabsContent value="channels">
+                <div className="space-y-4">
+                  <h3 className="text-lg font-semibold">Manage Channels</h3>
+                  {isLoadingChannels ? (
+                    <div className="flex items-center justify-center p-4">
+                      <Loader2 className="h-6 w-6 animate-spin" />
+                    </div>
+                  ) : channels.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">No channels in this workspace</p>
+                  ) : (
+                    <ScrollArea className="h-[300px] rounded-md border p-4">
+                      <div className="space-y-2">
+                        {channels.map((channel) => (
+                          <div key={channel.id} className="flex items-center justify-between gap-2 p-2 rounded-lg hover:bg-accent">
+                            <div className="flex items-center gap-2">
+                              <Hash className="h-4 w-4 text-muted-foreground" />
+                              <span className="font-medium">{channel.name}</span>
+                            </div>
+                            <AlertDialog>
+                              <AlertDialogTrigger asChild>
+                                <Button variant="ghost" size="icon" className="h-8 w-8">
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </AlertDialogTrigger>
+                              <AlertDialogContent>
+                                <AlertDialogHeader>
+                                  <AlertDialogTitle>Delete Channel</AlertDialogTitle>
+                                  <AlertDialogDescription>
+                                    Are you sure you want to delete #{channel.name}? This action cannot be undone.
+                                  </AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                  <AlertDialogAction onClick={() => handleDeleteChannel(channel.id)}>
+                                    Delete
+                                  </AlertDialogAction>
+                                </AlertDialogFooter>
+                              </AlertDialogContent>
+                            </AlertDialog>
+                          </div>
+                        ))}
+                      </div>
+                    </ScrollArea>
+                  )}
+                </div>
+              </TabsContent>
+
+              <TabsContent value="settings">
+                <div className="space-y-4">
+                  <div>
+                    <Label htmlFor="maxChannelsPerUser">Max Channels Per User</Label>
+                    <Input
+                      id="maxChannelsPerUser"
+                      type="number"
+                      value={workspaceSettings.maxChannelsPerUser}
+                      onChange={(e) => setWorkspaceSettings({ ...workspaceSettings, maxChannelsPerUser: parseInt(e.target.value) })}
+                    />
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <Switch
+                      id="requireChannelApproval"
+                      checked={workspaceSettings.requireChannelApproval}
+                      onCheckedChange={(checked) => setWorkspaceSettings({ ...workspaceSettings, requireChannelApproval: checked })}
+                    />
+                    <Label htmlFor="requireChannelApproval">Require Channel Approval</Label>
+                  </div>
+                </div>
+              </TabsContent>
+            </>
+          )}
         </Tabs>
-      ) : (
-        <div>Please select a workspace to manage.</div>
       )}
     </div>
   )

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
 import { useToast } from '@/hooks/use-toast'
 import { User } from '@/types'
+import { useAuth } from '@/contexts/auth-context'
 
 interface WorkspaceMember extends Omit<User, 'status'> {
   role: 'member' | 'admin'
@@ -21,16 +22,19 @@ interface WorkspaceMemberData {
 export function useWorkspaceMembers(workspaceId: string | null) {
   const supabase = createClientComponentClient()
   const { toast } = useToast()
+  const { profile } = useAuth()
   const [members, setMembers] = useState<WorkspaceMember[]>([])
   const [isLoading, setIsLoading] = useState(false)
+  const [workspace, setWorkspace] = useState<{ owner_id: string } | null>(null)
 
   // Load initial data and set up subscriptions
   useEffect(() => {
     if (workspaceId) {
+      loadWorkspace()
       loadMembers()
       
-      // Set up realtime subscription
-      const channel = supabase
+      // Set up realtime subscription for memberships
+      const membershipsChannel = supabase
         .channel(`workspace_members:${workspaceId}`)
         .on(
           'postgres_changes',
@@ -40,20 +44,59 @@ export function useWorkspaceMembers(workspaceId: string | null) {
             table: 'workspace_memberships',
             filter: `workspace_id=eq.${workspaceId}`
           },
-          async (payload) => {
-            // Reload the entire member list when any change occurs
-            // This ensures we have the most up-to-date data including user details
+          async () => {
             await loadMembers()
           }
         )
         .subscribe()
 
-      // Cleanup subscription
+      // Set up realtime subscription for workspace changes
+      const workspaceChannel = supabase
+        .channel(`workspace:${workspaceId}`)
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'workspaces',
+            filter: `id=eq.${workspaceId}`
+          },
+          async () => {
+            await loadWorkspace()
+          }
+        )
+        .subscribe()
+
+      // Cleanup subscriptions
       return () => {
-        channel.unsubscribe()
+        membershipsChannel.unsubscribe()
+        workspaceChannel.unsubscribe()
       }
+    } else {
+      setWorkspace(null)
+      setMembers([])
     }
   }, [workspaceId])
+
+  const loadWorkspace = async () => {
+    if (!workspaceId) return
+
+    try {
+      console.log('Loading workspace details for:', workspaceId)
+      const { data, error } = await supabase
+        .from('workspaces')
+        .select('owner_id')
+        .eq('id', workspaceId)
+        .single()
+
+      if (error) throw error
+      console.log('Workspace details loaded:', data)
+      setWorkspace(data)
+    } catch (error) {
+      console.error('Error loading workspace:', error)
+      setWorkspace(null)
+    }
+  }
 
   const loadMembers = async () => {
     if (!workspaceId) return
@@ -89,6 +132,21 @@ export function useWorkspaceMembers(workspaceId: string | null) {
     }
   }
 
+  const isAdmin = profile?.id ? (
+    (() => {
+      const isMemberAdmin = members.some(m => m.id === profile.id && m.role === 'admin')
+      const isOwner = workspace?.owner_id === profile.id
+      console.log('Admin check:', {
+        profileId: profile.id,
+        workspaceOwnerId: workspace?.owner_id,
+        isOwner,
+        isMemberAdmin,
+        members: members.map(m => ({ id: m.id, role: m.role }))
+      })
+      return isMemberAdmin || isOwner
+    })()
+  ) : false
+
   const addMember = async (email: string, role: 'member' | 'admin' = 'member') => {
     if (!workspaceId) return
 
@@ -102,12 +160,13 @@ export function useWorkspaceMembers(workspaceId: string | null) {
 
       if (error) throw error
 
-      // Reload members to get updated list
-      await loadMembers()
       toast({
         title: 'Member added',
-        description: 'Successfully added new member to the workspace.'
+        description: `Successfully added ${email} to the workspace.`
       })
+
+      // Refresh the member list
+      await loadMembers()
     } catch (error: any) {
       console.error('Error adding member:', error)
       toast({
@@ -131,19 +190,13 @@ export function useWorkspaceMembers(workspaceId: string | null) {
 
       if (error) throw error
 
-      // Update local state
-      setMembers(prev =>
-        prev.map(member =>
-          member.id === userId
-            ? { ...member, role: newRole }
-            : member
-        )
-      )
-
       toast({
         title: 'Role updated',
         description: `Successfully updated member role to ${newRole}.`
       })
+
+      // Refresh the member list
+      await loadMembers()
     } catch (error: any) {
       console.error('Error updating member role:', error)
       toast({
@@ -166,13 +219,13 @@ export function useWorkspaceMembers(workspaceId: string | null) {
 
       if (error) throw error
 
-      // Update local state
-      setMembers(prev => prev.filter(member => member.id !== userId))
-
       toast({
         title: 'Member removed',
         description: 'Successfully removed member from workspace.'
       })
+
+      // Refresh the member list
+      await loadMembers()
     } catch (error: any) {
       console.error('Error removing member:', error)
       toast({
@@ -188,6 +241,7 @@ export function useWorkspaceMembers(workspaceId: string | null) {
     isLoading,
     addMember,
     updateMemberRole,
-    removeMember
+    removeMember,
+    isAdmin
   }
 } 

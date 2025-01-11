@@ -18,7 +18,7 @@ RETURNS TABLE (
 BEGIN
   RETURN QUERY
   WITH workspace_users AS (
-    -- Get all users in the workspace except the current user
+    -- Get all users in the workspace (including the current user)
     SELECT 
       u.id,
       u.username,
@@ -29,12 +29,14 @@ BEGIN
     FROM public.users u
     JOIN workspace_memberships wm ON wm.user_id = u.id
     WHERE wm.workspace_id = workspace_id_param
-    AND u.id != user_id_param
   ),
   last_messages AS (
     -- Get the most recent message timestamp for each user
     SELECT 
       CASE 
+        -- Handle self-messages: when sender is receiver, return the sender_id
+        WHEN dm.sender_id = dm.receiver_id THEN dm.sender_id
+        -- Otherwise switch between sender and receiver as before
         WHEN dm.sender_id = user_id_param THEN dm.receiver_id
         ELSE dm.sender_id
       END as chat_user_id,

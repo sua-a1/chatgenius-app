@@ -32,8 +32,6 @@ export function UserStatusProvider({ children }: { children: React.ReactNode }) 
   const [lastActivity, setLastActivity] = useState<Date>(new Date())
   const [isVisible, setIsVisible] = useState<boolean>(true)
 
-  console.log('UserStatusProvider mounted', { profileId: profile?.id })
-
   // Handle browser visibility changes
   useEffect(() => {
     const handleVisibilityChange = () => {

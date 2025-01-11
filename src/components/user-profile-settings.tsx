@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -11,7 +11,8 @@ import { useUserStatus } from '@/contexts/user-status-context'
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
 import { useToast } from '@/hooks/use-toast'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
-import { Circle } from 'lucide-react'
+import { Circle, Upload } from 'lucide-react'
+import { DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 
 // Import UserProfile type from auth context
 import type { UserProfile } from '@/contexts/auth-context'
@@ -25,11 +26,35 @@ export function UserProfileSettings({ onClose }: UserProfileSettingsProps) {
   const { userStatuses, updateMyStatus } = useUserStatus()
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
+  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false)
   const [selectedStatus, setSelectedStatus] = useState<'auto' | UserStatus>('auto')
   const supabase = createClientComponentClient()
   const { toast } = useToast()
+  const fileInputRef = useRef<HTMLInputElement>(null)
   
   const [profile, setProfile] = useState<UserProfile | null>(null)
+
+  // Listen for auth state changes
+  useEffect(() => {
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'USER_UPDATED') {
+        // Handle any profile update
+        setIsUploadingAvatar(false);
+        setIsSaving(false);
+        onClose();
+        // Reload immediately after dialog closes
+        setTimeout(() => {
+          window.location.reload();
+        }, 100);
+      }
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, [onClose]);
 
   // Initialize selected status
   useEffect(() => {
@@ -57,7 +82,6 @@ export function UserProfileSettings({ onClose }: UserProfileSettingsProps) {
           push: false,
         },
         theme: initialProfile?.theme || 'light',
-        status: initialProfile?.status,
         created_at: initialProfile?.created_at || user.created_at || new Date().toISOString(),
         updated_at: initialProfile?.updated_at || new Date().toISOString()
       }
@@ -140,20 +164,20 @@ export function UserProfileSettings({ onClose }: UserProfileSettingsProps) {
 
   const handleSave = async () => {
     if (!user?.id || !profile) {
-      console.log('No user or profile, closing')
-      onClose()
-      return
+      onClose();
+      return;
     }
     
     if (!hasProfileChanges()) {
-      console.log('No changes detected, closing')
-      onClose()
-      return
+      onClose();
+      return;
     }
 
+    // Prevent multiple saves
+    if (isSaving) return;
+
     try {
-      setIsSaving(true)
-      console.log('Starting save operation...')
+      setIsSaving(true);
 
       // Update user profile in database first
       const { error: profileError } = await supabase
@@ -166,55 +190,143 @@ export function UserProfileSettings({ onClose }: UserProfileSettingsProps) {
           theme: profile.theme,
           updated_at: new Date().toISOString(),
         })
-        .eq('id', user.id)
+        .eq('id', user.id);
 
-      if (profileError) {
-        console.error('Profile update error:', profileError)
-        throw profileError
-      }
+      if (profileError) throw profileError;
 
-      console.log('Profile updated in database')
-
-      // Show success toast immediately after database update
-      toast({
-        title: 'Profile updated',
-        description: 'Your profile has been updated successfully. Page will reload to apply changes.',
-      })
-
-      // Close the dialog
-      onClose()
-
-      // Force reload after a short delay
-      setTimeout(() => {
-        console.log('Reloading page...')
-        window.location.reload()
-      }, 1000)
-
-      // Update auth metadata in the background
-      supabase.auth.updateUser({
+      // Update auth metadata - this will trigger the auth state change event
+      const { error: authError } = await supabase.auth.updateUser({
         data: {
           full_name: profile.full_name,
           avatar_url: profile.avatar_url,
         }
-      }).then(({ error }) => {
-        if (error) {
-          console.error('Auth update error:', error)
-        } else {
-          console.log('Auth metadata updated')
-        }
-      })
+      });
+
+      if (authError) throw authError;
+
+      // Show success message
+      toast({
+        title: 'Profile updated',
+        description: 'Your profile has been updated successfully.',
+      });
 
     } catch (error: any) {
-      console.error('Save operation failed:', error)
-      setIsSaving(false)
-      
+      console.error('Save operation failed:', error);
+      setIsSaving(false);
       toast({
         title: 'Error updating profile',
         description: error.message || 'Could not update profile. Please try again.',
         variant: 'destructive',
-      })
+      });
     }
-  }
+  };
+
+  const handleAvatarClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleAvatarChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file || !user || !profile) return;
+
+    // Validate file type and size
+    if (!file.type.startsWith('image/')) {
+      toast({
+        variant: 'destructive',
+        title: 'Invalid file type',
+        description: 'Please select an image file.',
+      });
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) { // 5MB limit
+      toast({
+        variant: 'destructive',
+        title: 'File too large',
+        description: 'Please select an image under 5MB.',
+      });
+      return;
+    }
+
+    try {
+      setIsUploadingAvatar(true);
+
+      // Create optimized file name
+      const fileExt = file.name.split('.').pop()?.toLowerCase() || 'jpg';
+      const fileName = `${Date.now()}.${fileExt}`;
+      const filePath = `${user.id}/${fileName}`;
+
+      // Delete old avatar if exists
+      if (profile.avatar_url) {
+        const oldFilePath = profile.avatar_url.split('/').slice(-2).join('/');
+        if (oldFilePath) {
+          await supabase.storage
+            .from('avatars')
+            .remove([oldFilePath]);
+        }
+      }
+
+      // Upload the new file
+      const { error: uploadError } = await supabase.storage
+        .from('avatars')
+        .upload(filePath, file, {
+          cacheControl: '3600',
+          upsert: true
+        });
+
+      if (uploadError) throw uploadError;
+
+      // Get public URL
+      const { data: { publicUrl } } = supabase.storage
+        .from('avatars')
+        .getPublicUrl(filePath);
+
+      // Update profile in database
+      const { error: updateError } = await supabase
+        .from('users')
+        .update({ 
+          avatar_url: publicUrl,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', user.id);
+
+      if (updateError) throw updateError;
+
+      // Update auth metadata - this will trigger the auth state change event
+      const { error: authError } = await supabase.auth.updateUser({
+        data: { avatar_url: publicUrl }
+      });
+
+      if (authError) throw authError;
+
+      // Show success message
+      toast({
+        title: 'Avatar updated',
+        description: 'Your profile picture has been updated successfully.',
+      });
+
+      // Close dialog and reload after a delay
+      onClose();
+      // Use shorter delay for reload
+      setTimeout(() => {
+        window.location.reload();
+      }, 100);
+
+    } catch (error: any) {
+      console.error('Error in avatar update process:', error);
+      setIsUploadingAvatar(false);
+      toast({
+        variant: 'destructive',
+        title: 'Error updating avatar',
+        description: error.message || 'There was a problem updating your profile picture.',
+      });
+    } finally {
+      // Reset file input
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  };
 
   if (isLoading || !profile) {
     return (
@@ -227,20 +339,49 @@ export function UserProfileSettings({ onClose }: UserProfileSettingsProps) {
   }
 
   return (
-    <div className="p-4 max-w-md mx-auto">
-      <div className="flex justify-between items-center mb-4">
-        <h2 className="text-2xl font-bold">Profile Settings</h2>
-        <Button variant="ghost" onClick={onClose}>Close</Button>
-      </div>
+    <DialogContent className="sm:max-w-[425px]">
+      <DialogHeader>
+        <DialogTitle>Profile Settings</DialogTitle>
+      </DialogHeader>
       <div className="space-y-4">
         <div className="flex items-center space-x-4">
-          <Avatar className="h-20 w-20">
-            <AvatarImage src={profile.avatar_url || undefined} />
-            <AvatarFallback>
+          <div className="relative group">
+            <Avatar className={`h-20 w-20 transition-opacity ${isUploadingAvatar ? 'opacity-50' : 'group-hover:opacity-75'}`}>
+              <AvatarImage 
+                src={profile.avatar_url || undefined} 
+                className="object-cover"
+              />
+              <AvatarFallback className="text-2xl">
               {profile.full_name?.[0] || profile.username?.[0] || profile.email?.[0] || '?'}
             </AvatarFallback>
           </Avatar>
-          <Button disabled>Change Avatar</Button>
+            {!isUploadingAvatar && (
+              <div 
+                className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-0 group-hover:bg-opacity-50 transition-all rounded-full cursor-pointer"
+                onClick={handleAvatarClick}
+              >
+                <Upload className="h-6 w-6 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
+              </div>
+            )}
+            {isUploadingAvatar && (
+              <div className="absolute inset-0 flex items-center justify-center">
+                <div className="animate-spin rounded-full h-6 w-6 border-2 border-primary border-t-transparent"></div>
+              </div>
+            )}
+          </div>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={handleAvatarChange}
+          />
+          <Button 
+            onClick={handleAvatarClick}
+            disabled={isUploadingAvatar}
+          >
+            {isUploadingAvatar ? 'Uploading...' : 'Change Avatar'}
+          </Button>
         </div>
         <div>
           <Label htmlFor="username">Username</Label>
@@ -344,7 +485,7 @@ export function UserProfileSettings({ onClose }: UserProfileSettingsProps) {
           {isSaving ? 'Saving...' : 'Save Changes'}
         </Button>
       </div>
-    </div>
+    </DialogContent>
   )
 }
 
