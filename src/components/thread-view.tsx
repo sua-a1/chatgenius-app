@@ -183,6 +183,8 @@ export default function ThreadView({
   }])
   const [replyingTo, setReplyingTo] = useState<ThreadMessage | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const mainTimeoutId = useRef<NodeJS.Timeout | undefined>(undefined)
+  const repliesTimeoutId = useRef<NodeJS.Timeout | undefined>(undefined)
   const currentThreadParent = useMemo(() => threadStack[threadStack.length - 1], [threadStack])
 
   // Create a memoized message map for faster lookups
@@ -271,9 +273,8 @@ export default function ThreadView({
     }
 
     loadMessages()
-
-    // Set up real-time subscription with debounced updates
-    let timeoutId: NodeJS.Timeout
+    
+    // Subscribe to changes in the parent message and direct replies
     const channel = supabase
       .channel(`thread:${currentThreadParent.id}`)
       .on('postgres_changes', {
@@ -283,8 +284,8 @@ export default function ThreadView({
         filter: `id=eq.${currentThreadParent.id} or reply_to=eq.${currentThreadParent.id}`
       }, () => {
         // Debounce updates to prevent rapid re-renders
-        clearTimeout(timeoutId)
-        timeoutId = setTimeout(() => {
+        clearTimeout(mainTimeoutId.current)
+        mainTimeoutId.current = setTimeout(() => {
           if (!isLoading && mounted) {
             loadMessages()
           }
@@ -292,18 +293,18 @@ export default function ThreadView({
       })
       .subscribe()
 
-    // Set up another subscription for replies to replies
+    // Subscribe to changes in replies to replies
     const repliesChannel = supabase
       .channel(`thread-replies:${currentThreadParent.id}`)
       .on('postgres_changes', {
         event: '*',
         schema: 'public',
         table: 'messages',
-        filter: `reply_to.in.(${messages.filter(m => m.threadDepth === 1).map(m => m.id).join(',')})`
+        filter: `reply_to.neq.${currentThreadParent.id} and reply_to.in.(select id from messages where reply_to=${currentThreadParent.id})`
       }, () => {
         // Debounce updates to prevent rapid re-renders
-        clearTimeout(timeoutId)
-        timeoutId = setTimeout(() => {
+        clearTimeout(repliesTimeoutId.current)
+        repliesTimeoutId.current = setTimeout(() => {
           if (!isLoading && mounted) {
             loadMessages()
           }
@@ -313,7 +314,8 @@ export default function ThreadView({
 
     return () => {
       mounted = false
-      clearTimeout(timeoutId)
+      clearTimeout(mainTimeoutId.current)
+      clearTimeout(repliesTimeoutId.current)
       channel.unsubscribe()
       repliesChannel.unsubscribe()
     }

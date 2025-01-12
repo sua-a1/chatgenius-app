@@ -216,7 +216,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     }
 
+    // Listen for sign-out events
+    const handleSignOut = (event: CustomEvent<{ skipInit?: boolean }>) => {
+      if (event.detail?.skipInit) {
+        // If skipInit is true, prevent re-initialization by keeping isInitialized true
+        setIsInitialized(true)
+      } else {
+        // Otherwise reset initialization state
+        setIsInitialized(false)
+      }
+      setUser(null)
+      setProfile(null)
+    }
+
     window.addEventListener('profileUpdated', handleProfileUpdate as EventListener)
+    window.addEventListener('userSignOut', handleSignOut as EventListener)
 
     return () => {
       mounted = false
@@ -225,6 +239,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
       subscription.unsubscribe()
       window.removeEventListener('profileUpdated', handleProfileUpdate as EventListener)
+      window.removeEventListener('userSignOut', handleSignOut as EventListener)
     }
   }, [isInitialized])
 

@@ -32,7 +32,10 @@ export function UserStatusProvider({ children }: { children: React.ReactNode }) 
   const [autoMode, setAutoMode] = useState<Set<string>>(new Set())
   const [lastActivity, setLastActivity] = useState<Date>(new Date())
   const [isVisible, setIsVisible] = useState<boolean>(true)
-  const [isStatusInitialized, setIsStatusInitialized] = useState(false)
+  const [isStatusInitialized, setIsStatusInitialized] = useState(() => {
+    // Check if we've already initialized in this session
+    return typeof window !== 'undefined' && window.sessionStorage.getItem('statusInitialized') === 'true'
+  })
 
   const cleanup = useCallback(async () => {
     if (!profile?.id) return
@@ -119,6 +122,10 @@ export function UserStatusProvider({ children }: { children: React.ReactNode }) 
             onConflict: 'user_id'
           })
         
+        // Mark as initialized in session storage
+        if (typeof window !== 'undefined') {
+          window.sessionStorage.setItem('statusInitialized', 'true')
+        }
         setIsStatusInitialized(true)
         console.log('User presence initialized')
       } catch (error) {
@@ -228,7 +235,7 @@ export function UserStatusProvider({ children }: { children: React.ReactNode }) 
     }
   }, [profile?.id])
 
-  // Load initial statuses and subscribe to changes
+  // Load statuses and subscribe to changes
   useEffect(() => {
     const loadStatuses = async () => {
       try {
@@ -260,38 +267,45 @@ export function UserStatusProvider({ children }: { children: React.ReactNode }) 
       }
     }
 
-    loadStatuses()
+    // Load statuses if we have a profile, even if already initialized
+    if (isInitialized && profile?.id) {
+      loadStatuses()
 
-    // Subscribe to presence changes
-    const channel = supabase.channel('user_presence_changes')
-    
-    channel
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'user_presence'
-        },
-        (payload: RealtimePostgresChangesPayload<UserPresence>) => {
-          if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
-            const newPresence = payload.new
-            setUserStatuses(prev => {
-              const newStatuses = new Map(prev)
-              newStatuses.set(newPresence.user_id, newPresence.status)
-              return newStatuses
-            })
+      // Subscribe to presence changes
+      const channel = supabase.channel('user_presence_changes')
+      
+      channel
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'user_presence'
+          },
+          (payload: RealtimePostgresChangesPayload<UserPresence>) => {
+            if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+              const newPresence = payload.new
+              setUserStatuses(prev => {
+                // Only update if the status actually changed
+                if (prev.get(newPresence.user_id) === newPresence.status) {
+                  return prev
+                }
+                const newStatuses = new Map(prev)
+                newStatuses.set(newPresence.user_id, newPresence.status)
+                return newStatuses
+              })
+            }
           }
-        }
-      )
-      .subscribe()
+        )
+        .subscribe()
 
-    return () => {
-      channel.unsubscribe()
+      return () => {
+        channel.unsubscribe()
+      }
     }
-  }, [])
+  }, [isInitialized, profile?.id])
 
-  const setUserStatus = async (userId: string, status: UserStatus | 'auto') => {
+  const setUserStatus = useCallback(async (userId: string, status: UserStatus | 'auto') => {
     console.log('Setting user status:', { userId, status })
     
     if (status === 'auto') {
@@ -312,7 +326,7 @@ export function UserStatusProvider({ children }: { children: React.ReactNode }) 
 
     const now = new Date().toISOString()
     try {
-      const { data, error } = await supabase
+      const { error } = await supabase
         .from('user_presence')
         .upsert({
           user_id: userId,
@@ -323,28 +337,24 @@ export function UserStatusProvider({ children }: { children: React.ReactNode }) 
           onConflict: 'user_id'
         })
       
-      if (error) {
-        console.error('Error updating user status:', error)
-        throw error
-      }
-      
-      console.log('Status update successful:', data)
+      if (error) throw error
     } catch (error) {
       console.error('Failed to update user status:', error)
       throw error
     }
-  }
+  }, [])
 
-  const updateMyStatus = async (status: UserStatus | 'auto') => {
+  const updateMyStatus = useCallback(async (status: UserStatus | 'auto') => {
     if (!profile?.id) return
     await setUserStatus(profile.id, status)
-  }
+  }, [profile?.id, setUserStatus])
 
-  const contextValue = { userStatuses, setUserStatus, updateMyStatus, cleanup }
-  console.log('UserStatusProvider context value:', {
-    statusesCount: userStatuses.size,
-    statuses: Object.fromEntries(userStatuses)
-  })
+  const contextValue = React.useMemo(() => ({ 
+    userStatuses, 
+    setUserStatus, 
+    updateMyStatus, 
+    cleanup 
+  }), [userStatuses, setUserStatus, updateMyStatus, cleanup])
 
   return (
     <UserStatusContext.Provider value={contextValue}>

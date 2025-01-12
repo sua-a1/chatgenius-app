@@ -2,17 +2,22 @@
 
 import { Button } from '@/components/ui/button'
 import { LogOut } from 'lucide-react'
+import { useRouter } from 'next/navigation'
 
 export function SignOutButton() {
+  const router = useRouter()
+
+  const handleSignOut = () => {
+    router.push('/auth/sign-out')
+  }
+
   return (
-    <form action="/auth/sign-out" method="POST">
-      <Button 
-        variant="ghost" 
-        size="icon"
-        type="submit"
-      >
-        <LogOut className="h-4 w-4" />
-      </Button>
-    </form>
+    <Button 
+      variant="ghost" 
+      size="icon"
+      onClick={handleSignOut}
+    >
+      <LogOut className="h-4 w-4" />
+    </Button>
   )
 } 
