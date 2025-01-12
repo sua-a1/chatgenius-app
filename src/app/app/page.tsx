@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
+import { useRouter } from 'next/navigation'
 import Sidebar from '@/components/sidebar'
 import WorkspacePage from '@/components/workspace-page'
 import ChannelMessageArea from '@/components/channel-message-area'
@@ -9,9 +10,9 @@ import DirectMessageArea from '@/components/direct-message-area'
 import { ChannelManagement } from '@/components/channel-management'
 import { AdminPanel } from '@/components/admin-panel'
 import { UserProfileSettings } from '@/components/user-profile-settings'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useWorkspaces } from '@/hooks/use-workspaces'
 import { useChannels } from '@/hooks/use-channels'
+import { useAuth } from '@/contexts/auth-context'
 import type { Channel } from '@/types'
 import { Dialog } from '@/components/ui/dialog'
 
@@ -24,8 +25,10 @@ interface Workspace {
 }
 
 function AppContent() {
+  const router = useRouter()
   const searchParams = useSearchParams()
-  const { workspaces, isLoading, createWorkspace, deleteWorkspace } = useWorkspaces()
+  const { profile, isInitialized, isLoading: isAuthLoading } = useAuth()
+  const { workspaces, isLoading: isWorkspacesLoading, createWorkspace, deleteWorkspace } = useWorkspaces()
   const [activeWorkspace, setActiveWorkspace] = useState<Workspace | null>(null)
   const [activeChannel, setActiveChannel] = useState<Channel | null>(null)
   const [activeDM, setActiveDM] = useState<string | null>(null)
@@ -33,17 +36,32 @@ function AppContent() {
   const [activeTab, setActiveTab] = useState('chat')
   const { channels } = useChannels(activeWorkspace?.id)
 
+  // Redirect to signin if not authenticated
+  useEffect(() => {
+    if (isInitialized && !isAuthLoading && !profile) {
+      console.log('No profile found, redirecting to signin')
+      router.push('/auth/signin')
+    }
+  }, [isInitialized, isAuthLoading, profile, router])
+
   // Update active workspace when workspaces load or change
   useEffect(() => {
     let mounted = true
+    console.log('Workspace effect running:', { 
+      workspacesCount: workspaces.length,
+      isWorkspacesLoading,
+      activeWorkspaceId: activeWorkspace?.id,
+      searchParamsWorkspace: searchParams.get('workspace')
+    })
 
-    if (mounted && workspaces.length > 0) {
+    if (mounted && !isWorkspacesLoading && workspaces.length > 0) {
       const workspaceId = searchParams.get('workspace')
       
       if (workspaceId) {
         // If we have a workspace ID in the URL, try to select it
         const workspace = workspaces.find(w => w.id === workspaceId)
         if (workspace) {
+          console.log('Setting workspace from URL:', workspace.id)
           setActiveWorkspace(workspace)
           return
         }
@@ -58,7 +76,7 @@ function AppContent() {
       }
       // If no active workspace and workspaces exist, select the first one
       else if (!activeWorkspace) {
-        console.log('Setting first workspace as active')
+        console.log('Setting first workspace as active:', workspaces[0].id)
         setActiveWorkspace(workspaces[0])
       }
     }
@@ -66,7 +84,7 @@ function AppContent() {
     return () => {
       mounted = false
     }
-  }, [workspaces, activeWorkspace, searchParams])
+  }, [workspaces, isWorkspacesLoading, activeWorkspace, searchParams])
 
   const handleSelectWorkspace = useCallback((workspaceId: string) => {
     const workspace = workspaces.find(w => w.id === workspaceId)
@@ -120,12 +138,27 @@ function AppContent() {
     setActiveTab(tab)
   }, [])
 
-  if (isLoading) {
+  // Show loading state while auth is initializing or checking
+  if (!isInitialized || isAuthLoading) {
+    return (
+      <div className="flex h-screen items-center justify-center">
+        <p className="text-gray-500">Initializing app...</p>
+      </div>
+    )
+  }
+
+  // Show loading state while workspaces are loading
+  if (isWorkspacesLoading) {
     return (
       <div className="flex h-screen items-center justify-center">
         <p className="text-gray-500">Loading workspaces...</p>
       </div>
     )
+  }
+
+  // Don't render anything if not authenticated (redirect effect will handle it)
+  if (!profile) {
+    return null
   }
 
   return (

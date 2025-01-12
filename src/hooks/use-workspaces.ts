@@ -18,58 +18,75 @@ interface WorkspaceMembershipWithWorkspace {
 }
 
 export function useWorkspaces() {
-  const { profile } = useAuth()
+  const { profile, isInitialized } = useAuth()
   const { toast } = useToast()
   const [workspaces, setWorkspaces] = useState<Workspace[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const [hasInitialLoad, setHasInitialLoad] = useState(false)
 
   useEffect(() => {
-    if (profile?.id) {
-      console.log('Loading workspaces for user:', profile.id)
-      loadWorkspaces()
+    // Only proceed if auth is initialized
+    if (!isInitialized) {
+      console.log('Auth not initialized yet, waiting...')
+      return
+    }
 
-      // Set up realtime subscriptions with unique channel names
-      const workspacesChannel = supabase
-        .channel('workspaces-' + profile.id)
-        .on(
-          'postgres_changes',
-          {
-            event: '*',
-            schema: 'public',
-            table: 'workspaces'
-          },
-          () => {
-            loadWorkspaces()
-          }
-        )
-        .subscribe()
-
-      const membershipsChannel = supabase
-        .channel('memberships-' + profile.id)
-        .on(
-          'postgres_changes',
-          {
-            event: '*',
-            schema: 'public',
-            table: 'workspace_memberships'
-          },
-          () => {
-            loadWorkspaces()
-          }
-        )
-        .subscribe()
-
-      // Cleanup subscriptions
-      return () => {
-        workspacesChannel.unsubscribe()
-        membershipsChannel.unsubscribe()
-      }
-    } else {
-      console.log('No profile ID available')
+    // If no profile, clear workspaces
+    if (!profile?.id) {
+      console.log('No profile ID available, clearing workspaces')
       setWorkspaces([])
       setIsLoading(false)
+      return
     }
-  }, [profile?.id])
+
+    console.log('Loading workspaces for user:', profile.id)
+    
+    // Only load workspaces if we haven't done the initial load
+    // or if the profile ID has changed
+    if (!hasInitialLoad) {
+      loadWorkspaces()
+    }
+
+    // Set up realtime subscriptions with unique channel names
+    const workspacesChannel = supabase
+      .channel('workspaces-' + profile.id)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'workspaces'
+        },
+        () => {
+          console.log('Workspace change detected, reloading...')
+          loadWorkspaces()
+        }
+      )
+      .subscribe()
+
+    const membershipsChannel = supabase
+      .channel('memberships-' + profile.id)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'workspace_memberships'
+        },
+        () => {
+          console.log('Membership change detected, reloading...')
+          loadWorkspaces()
+        }
+      )
+      .subscribe()
+
+    // Cleanup subscriptions
+    return () => {
+      console.log('Cleaning up workspace subscriptions')
+      workspacesChannel.unsubscribe()
+      membershipsChannel.unsubscribe()
+    }
+  }, [profile?.id, isInitialized, hasInitialLoad])
 
   const loadWorkspaces = async () => {
     try {
@@ -122,6 +139,7 @@ export function useWorkspaces() {
 
       console.log('Loaded workspaces:', uniqueWorkspaces)
       setWorkspaces(uniqueWorkspaces)
+      setHasInitialLoad(true)
     } catch (error) {
       console.error('Error loading workspaces:', error)
       toast({
