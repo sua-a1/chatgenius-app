@@ -14,7 +14,7 @@ import {
 import { useState } from 'react'
 
 export function UserMenu({ onOpenProfileSettings, isCollapsed }: { onOpenProfileSettings?: () => void, isCollapsed?: boolean }) {
-  const { profile } = useAuth()
+  const { profile, signOut } = useAuth()
   const { userStatuses } = useUserStatus()
   const currentStatus = userStatuses.get(profile?.id || '') || 'offline'
   const { toast } = useToast()
@@ -29,18 +29,7 @@ export function UserMenu({ onOpenProfileSettings, isCollapsed }: { onOpenProfile
         description: 'Please wait while we sign you out.',
       })
 
-      const response = await fetch('/auth/sign-out', {
-        method: 'POST',
-        credentials: 'include'
-      })
-      
-      if (!response.ok) {
-        throw new Error('Failed to sign out')
-      }
-
-      localStorage.clear()
-      sessionStorage.clear()
-      window.location.href = response.url
+      await signOut()
     } catch (error: any) {
       console.error('Error signing out:', error)
       toast({
