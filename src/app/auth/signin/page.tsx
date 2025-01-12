@@ -5,45 +5,57 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useToast } from '@/hooks/use-toast'
-import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
 import { useSearchParams } from 'next/navigation'
-import { useState, useEffect, Suspense } from 'react'
+import { useState, useLayoutEffect, Suspense } from 'react'
+import { supabase } from '@/lib/supabase'
 
 function SignInForm() {
   const [email, setEmail] = useState('')
   const [isLoading, setIsLoading] = useState(false)
-  const [isMounted, setIsMounted] = useState(false)
-  const supabase = createClientComponentClient()
   const { toast } = useToast()
   const searchParams = useSearchParams()
   const error = searchParams.get('error')
 
-  // Handle hydration mismatch
-  useEffect(() => {
-    setIsMounted(true)
+  useLayoutEffect(() => {
+    // Pre-warm the Supabase connection
+    supabase.auth.getSession().catch(() => {})
   }, [])
 
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsLoading(true)
+    console.log('Initiating sign-in process for:', email)
 
     try {
+      // Show toast immediately for better UX
+      toast({
+        title: 'Sending magic link...',
+        description: 'Please wait while we prepare your sign-in link.',
+      })
+
       const { error } = await supabase.auth.signInWithOtp({
         email,
         options: {
           emailRedirectTo: `${window.location.origin}/auth/callback`,
+          shouldCreateUser: true,
+          data: {
+            email,
+          },
         },
       })
 
       if (error) {
+        console.error('Sign-in error:', error)
         throw error
       }
 
+      console.log('Magic link sent successfully')
       toast({
         title: 'Check your email',
-        description: 'We sent you a magic link to sign in.',
+        description: 'We sent you a magic link to sign in. It may take a minute to arrive.',
       })
     } catch (error: any) {
+      console.error('Sign-in process failed:', error)
       toast({
         title: 'Error',
         description: error.message || 'Something went wrong. Please try again.',
@@ -52,11 +64,6 @@ function SignInForm() {
     } finally {
       setIsLoading(false)
     }
-  }
-
-  // Don't render until mounted to prevent hydration mismatch
-  if (!isMounted) {
-    return null
   }
 
   return (
@@ -101,10 +108,9 @@ function SignInForm() {
                     onChange={(e) => setEmail(e.target.value)}
                     required
                     disabled={isLoading}
-                    suppressHydrationWarning
                   />
                 </div>
-                <Button type="submit" disabled={isLoading} suppressHydrationWarning>
+                <Button type="submit" disabled={isLoading}>
                   {isLoading ? 'Sending magic link...' : 'Continue with Email'}
                 </Button>
               </div>

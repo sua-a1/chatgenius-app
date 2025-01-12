@@ -103,96 +103,97 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   const signOut = async () => {
-    // Dispatch sign-out event if available
-    if (signOutEvent) {
-      window.dispatchEvent(signOutEvent)
-    }
+    // Start sign-out process immediately
+    const signOutPromise = supabase.auth.signOut()
 
     // Clear local state immediately
     setUser(null)
     setProfile(null)
     setIsInitialized(false)
+    setInitAttempts(0)
 
-    // Start sign-out process in background
-    supabase.auth.signOut()
-      .catch(error => {
-        console.error('Error during sign-out:', error)
+    // Dispatch cleanup event and redirect immediately
+    if (typeof window !== 'undefined') {
+      // Use a custom event with a flag to indicate immediate cleanup
+      const cleanupEvent = new CustomEvent('userSignOut', {
+        detail: { immediate: true }
       })
+      window.dispatchEvent(cleanupEvent)
+    }
 
-    // Redirect immediately
-    router.push('/auth/signin')
+    // Redirect to landing page immediately
+    router.push('/')
+
+    try {
+      // Wait for sign-out with a timeout
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Sign-out timeout')), 2000)
+      )
+      
+      await Promise.race([signOutPromise, timeoutPromise])
+        .catch(error => {
+          console.error('Sign-out process error:', error)
+        })
+    } catch (error) {
+      console.error('Error during sign-out cleanup:', error)
+    }
+
+    return Promise.resolve()
   }
 
   useEffect(() => {
     let mounted = true
-    let initTimeout: NodeJS.Timeout
-    let retryTimeout: NodeJS.Timeout
+    let initTimeout: NodeJS.Timeout | null = null
 
     const initAuth = async () => {
       try {
-        console.log('Initializing auth... (attempt', initAttempts + 1, ')')
+        console.log('Initializing auth...')
         setIsLoading(true)
 
-        // Set a timeout to prevent hanging
-        initTimeout = setTimeout(() => {
-          if (mounted && !isInitialized) {
-            console.log('Auth initialization timed out, retrying...')
-            setInitAttempts(prev => prev + 1)
-          }
-        }, 5000) // 5 second timeout
-
-        // First try to get the session
+        // Get session
         const { data: { session }, error: sessionError } = await supabase.auth.getSession()
 
         if (sessionError) {
           console.error('Error getting session:', sessionError)
           if (mounted) {
-            setIsInitialized(true)
             setIsLoading(false)
           }
           return
         }
 
-        if (session?.user) {
-          if (mounted) {
+        if (mounted) {
+          if (session?.user) {
+            console.log('Session found, setting user:', session.user.id)
             setUser(session.user)
             const profile = await refreshProfile()
             if (!profile) {
-              console.error('Failed to load profile during initialization')
-              // Retry profile load after a short delay
-              retryTimeout = setTimeout(() => {
-                if (mounted && !profile) {
-                  console.log('Retrying profile load...')
+              console.log('No profile found, will retry in background')
+              // Retry profile load in background
+              initTimeout = setTimeout(() => {
+                if (mounted) {
                   refreshProfile()
                 }
-              }, 2000)
+              }, 1000)
             }
+          } else {
+            console.log('No session found')
+            setUser(null)
+            setProfile(null)
           }
-        }
-
-        if (mounted) {
           setIsInitialized(true)
           setIsLoading(false)
-          clearTimeout(initTimeout)
         }
       } catch (error) {
         console.error('Error in initAuth:', error)
         if (mounted) {
-          setIsInitialized(true)
           setIsLoading(false)
         }
       }
     }
 
-    // Only attempt initialization 3 times
-    if (initAttempts < 3 && !isInitialized) {
+    // Always try to initialize
+    if (!isInitialized) {
       initAuth()
-    } else if (initAttempts >= 3 && !isInitialized) {
-      console.error('Failed to initialize auth after 3 attempts')
-      if (mounted) {
-        setIsInitialized(true)
-        setIsLoading(false)
-      }
     }
 
     // Listen for auth changes
@@ -204,19 +205,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setUser(session.user)
           const profile = await refreshProfile()
           if (!profile) {
-            console.error('Failed to load profile after auth state change')
-            // Retry profile load after a short delay
-            retryTimeout = setTimeout(() => {
-              if (mounted && !profile) {
-                console.log('Retrying profile load after auth change...')
+            console.log('No profile after auth change, retrying...')
+            initTimeout = setTimeout(() => {
+              if (mounted) {
                 refreshProfile()
               }
-            }, 2000)
+            }, 1000)
           }
         } else {
           setUser(null)
           setProfile(null)
         }
+        setIsInitialized(true)
       }
     })
 
@@ -232,14 +232,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     return () => {
       mounted = false
-      clearTimeout(initTimeout)
-      clearTimeout(retryTimeout)
+      if (initTimeout) {
+        clearTimeout(initTimeout)
+      }
       subscription.unsubscribe()
       window.removeEventListener('profileUpdated', handleProfileUpdate as EventListener)
     }
-  }, [initAttempts, isInitialized])
+  }, [isInitialized])
 
-  const contextValue = {
+  const contextValue: AuthContextType = {
     user,
     profile,
     refreshProfile,
