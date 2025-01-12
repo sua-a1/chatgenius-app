@@ -27,21 +27,6 @@ export default function SignOutPage() {
           window.localStorage.removeItem('supabase.auth.refresh_token')
         }
 
-        // Call the API to handle server-side sign-out
-        try {
-          const response = await fetch('/api/auth/sign-out', {
-            method: 'POST',
-            credentials: 'include',
-          })
-
-          if (!response.ok) {
-            throw new Error('Failed to sign out')
-          }
-        } catch (error) {
-          console.error('Error signing out:', error)
-          // Continue with client-side sign-out even if API call fails
-        }
-
         // Let the auth context handle the sign-out and navigation
         await signOut()
       } catch (error) {
