@@ -262,7 +262,8 @@ export function UserProfileSettings({ onClose }: UserProfileSettingsProps) {
         if (oldFilePath) {
           await supabase.storage
             .from('avatars')
-            .remove([oldFilePath]);
+            .remove([oldFilePath])
+            .catch(console.error); // Don't block on cleanup errors
         }
       }
 
@@ -292,7 +293,7 @@ export function UserProfileSettings({ onClose }: UserProfileSettingsProps) {
 
       if (updateError) throw updateError;
 
-      // Update auth metadata - this will trigger the auth state change event
+      // Update auth metadata
       const { error: authError } = await supabase.auth.updateUser({
         data: { avatar_url: publicUrl }
       });
@@ -305,12 +306,12 @@ export function UserProfileSettings({ onClose }: UserProfileSettingsProps) {
         description: 'Your profile picture has been updated successfully.',
       });
 
-      // Close dialog and reload after a delay
+      // Update local state
+      await refreshProfile();
+      
+      // Close dialog and reload
       onClose();
-      // Use shorter delay for reload
-      setTimeout(() => {
-        window.location.reload();
-      }, 100);
+      window.location.reload();
 
     } catch (error: any) {
       console.error('Error in avatar update process:', error);
