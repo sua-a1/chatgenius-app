@@ -196,9 +196,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         const { data: { session }, error } = await supabase.auth.getSession()
         
+        // Treat any error as not signed in
         if (error) {
           console.error('Error getting session:', error)
           if (mounted) {
+            setUser(null)
+            setProfile(null)
             setIsInitialized(true)
             setIsLoading(false)
             setIsInitializing(false)
@@ -206,42 +209,39 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           return
         }
 
-        if (session?.user && mounted && !isSigningOut) {
-          setUser(session.user)
-          
-          // Only refresh profile if not on public page
-          const isPublicPage = [
-            '/',
-            '/auth/sign-in',
-            '/auth/sign-out',
-            '/auth/callback',
-            '/auth/verify'
-          ].includes(window.location.pathname)
-
-          if (!isPublicPage) {
-            const profileResult = await refreshProfile()
-            
-            // If profile fetch fails, retry after a delay
-            if (!profileResult && mounted && initAttempts < 3 && !isSigningOut) {
-              console.log('Profile fetch failed, retrying...')
-              setInitAttempts(prev => prev + 1)
-              setIsInitializing(false)
-              retryTimeout = setTimeout(() => {
-                setIsInitialized(false) // Force re-initialization
-              }, 2000)
-              return
-            }
-          }
-        }
-
+        // Always set user and initialized state, even without profile
         if (mounted) {
+          setUser(session?.user ?? null)
           setIsInitialized(true)
           setIsLoading(false)
           setIsInitializing(false)
+
+          // Only try to get profile if we have a session and aren't on a public page
+          if (session?.user) {
+            const isPublicPage = [
+              '/',
+              '/auth/sign-in',
+              '/auth/sign-out',
+              '/auth/callback',
+              '/auth/verify'
+            ].includes(window.location.pathname)
+
+            if (!isPublicPage) {
+              const profileResult = await refreshProfile()
+              
+              // If profile fetch fails, log but don't block initialization
+              if (!profileResult && mounted && !isSigningOut) {
+                console.log('Profile fetch failed, treating as partial initialization')
+              }
+            }
+          }
         }
       } catch (error) {
+        // Treat any error as not signed in
         console.error('Auth initialization error:', error)
         if (mounted) {
+          setUser(null)
+          setProfile(null)
           setIsInitialized(true)
           setIsLoading(false)
           setIsInitializing(false)
@@ -286,7 +286,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           ].includes(window.location.pathname)
 
           if (!isPublicPage && !isInitializing) {
+            // Don't block on profile refresh
             refreshProfile().then(() => {
+              if (mounted) {
+                setIsInitialized(true)
+                setIsLoading(false)
+              }
+            }).catch(() => {
+              // On error, still mark as initialized
               if (mounted) {
                 setIsInitialized(true)
                 setIsLoading(false)
@@ -296,11 +303,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             setIsInitialized(true)
             setIsLoading(false)
           }
+        } else {
+          // No user in session, treat as not signed in
+          setUser(null)
+          setProfile(null)
+          setIsInitialized(true)
+          setIsLoading(false)
         }
       } else {
         // For other events, just update the user state
         setUser(session?.user ?? null)
         setIsLoading(false)
+        setIsInitialized(true)
       }
     })
 
