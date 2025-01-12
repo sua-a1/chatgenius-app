@@ -41,6 +41,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [profile, setProfile] = useState<UserProfile | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isInitialized, setIsInitialized] = useState(false)
+  const [initAttempts, setInitAttempts] = useState(0)
   const supabase = createClientComponentClient()
   const router = useRouter()
 
@@ -96,33 +97,47 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     let mounted = true
+    let initTimeout: NodeJS.Timeout
 
     const initAuth = async () => {
       try {
-        console.log('Initializing auth...')
+        console.log('Initializing auth... (attempt', initAttempts + 1, ')')
         setIsLoading(true)
+
+        // Set a timeout to prevent hanging
+        initTimeout = setTimeout(() => {
+          if (mounted && !isInitialized) {
+            console.log('Auth initialization timed out, retrying...')
+            setInitAttempts(prev => prev + 1)
+          }
+        }, 5000) // 5 second timeout
 
         // First try to get the session
         const { data: { session }, error: sessionError } = await supabase.auth.getSession()
 
         if (sessionError) {
           console.error('Error getting session:', sessionError)
-          setIsInitialized(true)
-          setIsLoading(false)
+          if (mounted) {
+            setIsInitialized(true)
+            setIsLoading(false)
+          }
           return
         }
 
         if (session?.user) {
-          setUser(session.user)
-          const profile = await refreshProfile()
-          if (!profile) {
-            console.error('Failed to load profile during initialization')
+          if (mounted) {
+            setUser(session.user)
+            const profile = await refreshProfile()
+            if (!profile) {
+              console.error('Failed to load profile during initialization')
+            }
           }
         }
 
         if (mounted) {
           setIsInitialized(true)
           setIsLoading(false)
+          clearTimeout(initTimeout)
         }
       } catch (error) {
         console.error('Error in initAuth:', error)
@@ -133,7 +148,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     }
 
-    initAuth()
+    // Only attempt initialization 3 times
+    if (initAttempts < 3 && !isInitialized) {
+      initAuth()
+    } else if (initAttempts >= 3 && !isInitialized) {
+      console.error('Failed to initialize auth after 3 attempts')
+      if (mounted) {
+        setIsInitialized(true)
+        setIsLoading(false)
+      }
+    }
 
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
@@ -165,10 +189,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     return () => {
       mounted = false
+      clearTimeout(initTimeout)
       subscription.unsubscribe()
       window.removeEventListener('profileUpdated', handleProfileUpdate as EventListener)
     }
-  }, [])
+  }, [initAttempts, isInitialized])
 
   const contextValue = {
     user,
