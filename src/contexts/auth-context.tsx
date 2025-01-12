@@ -194,7 +194,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setIsInitializing(true)
         console.log('Initializing auth...')
 
-        const { data: { session }, error } = await supabase.auth.getSession()
+        // Add timeout to the session check
+        const sessionPromise = supabase.auth.getSession()
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Auth initialization timed out')), 3000)
+        )
+
+        const { data: { session }, error } = await Promise.race([
+          sessionPromise,
+          timeoutPromise
+        ]).catch(error => {
+          console.error('Auth initialization failed:', error)
+          return { data: { session: null }, error }
+        }) as Awaited<ReturnType<typeof supabase.auth.getSession>>
         
         // Treat any error as not signed in
         if (error) {
@@ -227,7 +239,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             ].includes(window.location.pathname)
 
             if (!isPublicPage) {
-              const profileResult = await refreshProfile()
+              // Add timeout to profile fetch
+              const profilePromise = refreshProfile()
+              const profileTimeoutPromise = new Promise<null>((_, reject) => 
+                setTimeout(() => reject(new Error('Profile fetch timed out')), 3000)
+              )
+
+              const profileResult = await Promise.race([
+                profilePromise,
+                profileTimeoutPromise
+              ]).catch(error => {
+                console.error('Profile fetch failed:', error)
+                return null
+              })
               
               // If profile fetch fails, log but don't block initialization
               if (!profileResult && mounted && !isSigningOut) {
