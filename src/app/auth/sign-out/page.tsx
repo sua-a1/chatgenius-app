@@ -1,7 +1,7 @@
 'use client'
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { useEffect, useRef } from 'react'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { useAuth } from '@/contexts/auth-context'
 
 export default function SignOutPage() {
@@ -9,27 +9,34 @@ export default function SignOutPage() {
   const hasStartedSignOut = useRef(false)
 
   useEffect(() => {
-    if (hasStartedSignOut.current) return
-    hasStartedSignOut.current = true
+    const handleSignOut = async () => {
+      if (hasStartedSignOut.current) return
+      hasStartedSignOut.current = true
 
-    // Clear all auth-related cookies
-    const cookies = ['sb-access-token', 'sb-refresh-token', 'supabase-auth-token']
-    cookies.forEach(name => {
-      document.cookie = `${name}=; path=/; expires=Thu, 01 Jan 1970 00:00:01 GMT; domain=${window.location.hostname}`
-    })
+      try {
+        // Clear all auth-related cookies first
+        const cookies = ['sb-access-token', 'sb-refresh-token', 'supabase-auth-token']
+        cookies.forEach(name => {
+          document.cookie = `${name}=; path=/; expires=Thu, 01 Jan 1970 00:00:01 GMT; domain=${window.location.hostname}`
+        })
 
-    // Clear local storage
-    if (typeof window !== 'undefined') {
-      window.localStorage.removeItem('supabase.auth.token')
-      window.localStorage.removeItem('supabase.auth.expires_at')
-      window.localStorage.removeItem('supabase.auth.refresh_token')
+        // Clear local storage
+        if (typeof window !== 'undefined') {
+          window.localStorage.removeItem('supabase.auth.token')
+          window.localStorage.removeItem('supabase.auth.expires_at')
+          window.localStorage.removeItem('supabase.auth.refresh_token')
+        }
+
+        // Let the auth context handle the sign-out and navigation
+        await signOut()
+      } catch (error) {
+        console.error('Error during sign out:', error)
+        // Let the auth context handle navigation even on error
+        await signOut()
+      }
     }
 
-    // Let the auth context handle the sign-out and navigation
-    signOut().catch(() => {
-      // Ignore timeout errors, the cleanup has already been done
-      window.location.href = '/'
-    })
+    handleSignOut()
   }, [signOut])
 
   return (
