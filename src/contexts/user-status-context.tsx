@@ -1,6 +1,6 @@
 'use client'
 
-import React, { createContext, useContext, useEffect, useState } from 'react'
+import React, { createContext, useContext, useEffect, useState, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from './auth-context'
 import { UserStatus } from '@/components/ui/avatar'
@@ -17,6 +17,7 @@ interface UserStatusContextType {
   userStatuses: Map<string, UserStatus>
   setUserStatus: (userId: string, status: UserStatus | 'auto') => Promise<void>
   updateMyStatus: (status: UserStatus | 'auto') => Promise<void>
+  cleanup: () => Promise<void>
 }
 
 const UserStatusContext = createContext<UserStatusContextType | undefined>(undefined)
@@ -32,6 +33,55 @@ export function UserStatusProvider({ children }: { children: React.ReactNode }) 
   const [lastActivity, setLastActivity] = useState<Date>(new Date())
   const [isVisible, setIsVisible] = useState<boolean>(true)
   const [isStatusInitialized, setIsStatusInitialized] = useState(false)
+
+  const cleanup = useCallback(async () => {
+    if (!profile?.id) return
+
+    console.log('Cleaning up user presence for:', profile.id)
+    try {
+      // Set status to offline with a timeout
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('Cleanup timed out')), 2000)
+      })
+
+      const cleanupPromise = supabase
+        .from('user_presence')
+        .upsert({
+          user_id: profile.id,
+          status: 'offline',
+          last_seen: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        }, {
+          onConflict: 'user_id'
+        })
+
+      await Promise.race([cleanupPromise, timeoutPromise])
+        .catch(error => {
+          console.error('Cleanup error or timeout:', error)
+        })
+
+      // Clear local state immediately regardless of cleanup success
+      setUserStatuses(new Map())
+      setAutoMode(new Set())
+      setIsStatusInitialized(false)
+      console.log('User presence cleanup completed')
+    } catch (error) {
+      console.error('Error in cleanup:', error)
+    }
+  }, [profile?.id])
+
+  // Add sign-out event listener
+  useEffect(() => {
+    const handleSignOut = async () => {
+      console.log('Handling sign-out in UserStatusProvider')
+      await cleanup()
+    }
+
+    window.addEventListener('userSignOut', handleSignOut)
+    return () => {
+      window.removeEventListener('userSignOut', handleSignOut)
+    }
+  }, [cleanup])
 
   // Initialize user's presence when they first log in
   useEffect(() => {
@@ -136,6 +186,7 @@ export function UserStatusProvider({ children }: { children: React.ReactNode }) 
     // Cleanup on unmount
     return () => {
       clearInterval(interval)
+      // Don't call cleanup here as it might be a component unmount rather than a sign-out
     }
   }, [profile?.id])
 
@@ -289,7 +340,7 @@ export function UserStatusProvider({ children }: { children: React.ReactNode }) 
     await setUserStatus(profile.id, status)
   }
 
-  const contextValue = { userStatuses, setUserStatus, updateMyStatus }
+  const contextValue = { userStatuses, setUserStatus, updateMyStatus, cleanup }
   console.log('UserStatusProvider context value:', {
     statusesCount: userStatuses.size,
     statuses: Object.fromEntries(userStatuses)

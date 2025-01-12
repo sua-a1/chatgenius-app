@@ -24,6 +24,7 @@ interface AuthContextType {
   user: User | null
   profile: UserProfile | null
   refreshProfile: () => Promise<UserProfile | null>
+  signOut: () => Promise<void>
   isLoading: boolean
   isInitialized: boolean
 }
@@ -32,6 +33,7 @@ const AuthContext = createContext<AuthContextType>({
   user: null,
   profile: null,
   refreshProfile: async () => null,
+  signOut: async () => {},
   isLoading: true,
   isInitialized: false
 })
@@ -44,6 +46,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [initAttempts, setInitAttempts] = useState(0)
   const supabase = createClientComponentClient()
   const router = useRouter()
+
+  // Create signOutEvent only if window is available
+  const signOutEvent = typeof window !== 'undefined' 
+    ? new Event('userSignOut') 
+    : null
 
   const refreshProfile = async () => {
     try {
@@ -95,9 +102,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
+  const signOut = async () => {
+    // Dispatch sign-out event if available
+    if (signOutEvent) {
+      window.dispatchEvent(signOutEvent)
+    }
+
+    // Clear local state immediately
+    setUser(null)
+    setProfile(null)
+    setIsInitialized(false)
+
+    // Start sign-out process in background
+    supabase.auth.signOut()
+      .catch(error => {
+        console.error('Error during sign-out:', error)
+      })
+
+    // Redirect immediately
+    router.push('/auth/signin')
+  }
+
   useEffect(() => {
     let mounted = true
     let initTimeout: NodeJS.Timeout
+    let retryTimeout: NodeJS.Timeout
 
     const initAuth = async () => {
       try {
@@ -130,6 +159,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             const profile = await refreshProfile()
             if (!profile) {
               console.error('Failed to load profile during initialization')
+              // Retry profile load after a short delay
+              retryTimeout = setTimeout(() => {
+                if (mounted && !profile) {
+                  console.log('Retrying profile load...')
+                  refreshProfile()
+                }
+              }, 2000)
             }
           }
         }
@@ -169,6 +205,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           const profile = await refreshProfile()
           if (!profile) {
             console.error('Failed to load profile after auth state change')
+            // Retry profile load after a short delay
+            retryTimeout = setTimeout(() => {
+              if (mounted && !profile) {
+                console.log('Retrying profile load after auth change...')
+                refreshProfile()
+              }
+            }, 2000)
           }
         } else {
           setUser(null)
@@ -190,6 +233,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => {
       mounted = false
       clearTimeout(initTimeout)
+      clearTimeout(retryTimeout)
       subscription.unsubscribe()
       window.removeEventListener('profileUpdated', handleProfileUpdate as EventListener)
     }
@@ -199,6 +243,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     user,
     profile,
     refreshProfile,
+    signOut,
     isLoading,
     isInitialized,
   }
