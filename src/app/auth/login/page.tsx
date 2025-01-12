@@ -1,3 +1,5 @@
+"use client";
+
 import { useState, useEffect } from 'react'
 import { Workspace, Channel, User } from '@/types/index'
 import { Button } from '@/components/ui/button'
