@@ -11,11 +11,6 @@ export interface UserProfile {
   email: string
   avatar_url: string | null
   full_name: string | null
-  notifications: {
-    email: boolean
-    push: boolean
-  }
-  theme: 'light' | 'dark'
   created_at: string
   updated_at: string
 }
@@ -110,8 +105,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           email,
           avatar_url,
           full_name,
-          notifications,
-          theme,
           created_at,
           updated_at
         `)
@@ -157,8 +150,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Now clear local state
       resetState()
 
-      // Dispatch cleanup event
-      if (typeof window !== 'undefined') {
+    // Dispatch cleanup event
+    if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('userSignOut', { detail: { immediate: true, skipInit: true } }))
       }
 

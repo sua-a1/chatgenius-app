@@ -5,8 +5,6 @@ create table if not exists public.users (
     email text not null,
     avatar_url text,
     full_name text,
-    notifications jsonb default '{"email": true, "push": true}'::jsonb,
-    theme text default 'light',
     updated_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 

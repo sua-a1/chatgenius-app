@@ -12,7 +12,7 @@ import { useAuth } from '@/contexts/auth-context'
 import { useUserStatus } from '@/contexts/user-status-context'
 import { SignOutButton } from './sign-out-button'
 import { useToast } from '@/hooks/use-toast'
-import { Workspace } from '@/types'
+import { Workspace, Channel } from '@/types'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ChannelManagement } from './channel-management'
 import { AdminPanel } from './admin-panel'
@@ -45,9 +45,25 @@ export default function WorkspacePage({ workspace, workspaces, onOpenProfileSett
   const { channels, isLoading: isLoadingChannels, createChannel } = useChannels(workspace?.id)
   const { recentChats, isLoading: isLoadingDMs, refreshChats } = useDirectMessages(workspace?.id, null)
   const [displayProfile, setDisplayProfile] = useState(profile)
-  const { members, isLoading: isLoadingMembers } = useWorkspaceMembers(workspace?.id || null)
+  const { members, isLoading: isLoadingMembers, isAdmin } = useWorkspaceMembers(workspace?.id || null)
   const [showMemberSearch, setShowMemberSearch] = useState(false)
   const [memberSearchQuery, setMemberSearchQuery] = useState('')
+
+  // Reset to chat tab when workspace changes
+  useEffect(() => {
+    if (activeTab !== 'chat') {
+      setActiveTab('chat')
+      onTabChange('chat')
+    }
+  }, [workspace?.id])
+
+  // Redirect non-admin users back to chat tab
+  useEffect(() => {
+    if (!isAdmin && (activeTab === 'manage' || activeTab === 'admin')) {
+      setActiveTab('chat')
+      onTabChange('chat')
+    }
+  }, [isAdmin, activeTab])
 
   const filteredMembers = useMemo(() => {
     if (!members) return []
@@ -103,11 +119,14 @@ export default function WorkspacePage({ workspace, workspaces, onOpenProfileSett
     const channel = await createChannel(newChannelName.trim())
     if (channel) {
       setNewChannelName('')
-      onSelectChannel(channel.id)
-      toast({
-        title: 'Channel created',
-        description: `#${channel.name} has been created successfully.`,
-      })
+      // Wait a short moment for the channel list to update
+      setTimeout(() => {
+        onSelectChannel(channel.id)
+        toast({
+          title: 'Channel created',
+          description: `#${channel.name} has been created successfully.`,
+        })
+      }, 500)
     }
   }
 
@@ -120,6 +139,10 @@ export default function WorkspacePage({ workspace, workspaces, onOpenProfileSett
     await onSelectDM(userId)
     // Refresh the chats list to show the new conversation
     refreshChats()
+  }
+
+  const handleChannelSelect = (channelId: string) => {
+    onSelectChannel(channelId)
   }
 
   const handleTabChange = (value: string) => {
@@ -135,19 +158,19 @@ export default function WorkspacePage({ workspace, workspaces, onOpenProfileSett
   })
 
   return (
-    <div className={`grid grid-rows-[auto,1fr,auto] h-full border-r ${isCollapsed ? 'w-16' : 'min-w-[16rem] max-w-xs'} transition-all duration-200`}>
-      <div className="border-b">
-        <div className="flex h-16 items-center px-2 justify-between">
+    <div className={`grid grid-rows-[auto,1fr,auto] h-full border-r ${isCollapsed ? 'w-16' : 'min-w-[16rem] max-w-xs'} transition-all duration-200 bg-gradient-to-b from-[#4A3B8C]/5 to-[#5D3B9E]/5`}>
+      <div className="border-b bg-gradient-to-r from-[#4A3B8C]/5 to-[#5D3B9E]/5">
+        <div className="flex h-16 items-center">
           {!isCollapsed ? (
-            <div className="flex items-center gap-2 px-2">
-              {workspace && <h1 className="text-xl font-semibold truncate">{workspace.name}</h1>}
+            <div className="flex items-center gap-2 px-4 flex-1">
+              {workspace && <h1 className="text-xl font-semibold truncate text-foreground/90">{workspace.name}</h1>}
             </div>
           ) : (
-            <div className="w-full flex justify-center">
-              <span className="text-xl font-semibold">{workspace?.name[0]}</span>
+            <div className="flex-1 flex justify-center">
+              <span className="text-xl font-semibold text-foreground/90">{workspace?.name[0]}</span>
             </div>
           )}
-          <Button variant="ghost" size="icon" onClick={() => setIsCollapsed(!isCollapsed)}>
+          <Button variant="ghost" size="icon" onClick={() => setIsCollapsed(!isCollapsed)} className="hover:bg-[#4A3B8C]/10 shrink-0">
             {isCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
           </Button>
         </div>
@@ -156,28 +179,32 @@ export default function WorkspacePage({ workspace, workspaces, onOpenProfileSett
       {!isCollapsed && workspace && (
         <Tabs value={activeTab} onValueChange={handleTabChange} className="flex-1 flex flex-col overflow-hidden">
           <div className="px-2 pt-2">
-            <TabsList className="w-full bg-[#3A2E6E]/10">
+            <TabsList className="w-full bg-[#4A3B8C]/5">
               <TabsTrigger 
                 value="chat" 
-                className="flex-1 data-[state=active]:bg-[#3A2E6E] data-[state=active]:text-white"
+                className="flex-1 data-[state=active]:bg-[#4A3B8C]/20 data-[state=active]:text-foreground"
               >
                 <MessageSquare className="h-4 w-4 mr-2" />
                 Chat
               </TabsTrigger>
-              <TabsTrigger 
-                value="manage" 
-                className="flex-1 data-[state=active]:bg-[#3A2E6E] data-[state=active]:text-white"
-              >
-                <Users className="h-4 w-4 mr-2" />
-                Manage
-              </TabsTrigger>
-              <TabsTrigger 
-                value="admin" 
-                className="flex-1 data-[state=active]:bg-[#3A2E6E] data-[state=active]:text-white"
-              >
-                <Shield className="h-4 w-4 mr-2" />
-                Admin
-              </TabsTrigger>
+              {isAdmin && (
+                <>
+                  <TabsTrigger 
+                    value="manage" 
+                    className="flex-1 data-[state=active]:bg-[#4A3B8C]/20 data-[state=active]:text-foreground"
+                  >
+                    <Users className="h-4 w-4 mr-2" />
+                    Manage
+                  </TabsTrigger>
+                  <TabsTrigger 
+                    value="admin" 
+                    className="flex-1 data-[state=active]:bg-[#4A3B8C]/20 data-[state=active]:text-foreground"
+                  >
+                    <Shield className="h-4 w-4 mr-2" />
+                    Admin
+                  </TabsTrigger>
+                </>
+              )}
             </TabsList>
           </div>
 
@@ -199,7 +226,7 @@ export default function WorkspacePage({ workspace, workspaces, onOpenProfileSett
                             key={channel.id}
                             variant="ghost"
                             className="w-full justify-start px-2 hover:bg-[#3A2E6E]/10"
-                            onClick={() => onSelectChannel(channel.id)}
+                            onClick={() => handleChannelSelect(channel.id)}
                           >
                             <Hash className="mr-2 h-4 w-4 shrink-0" />
                             <span className="truncate">{channel.name}</span>

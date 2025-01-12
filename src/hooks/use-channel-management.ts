@@ -54,6 +54,13 @@ export function useChannelManagement(workspaceId: string | undefined, channels: 
   const [isLoadingChannel, setIsLoadingChannel] = useState(true)
   const [isLoadingWorkspace, setIsLoadingWorkspace] = useState(true)
 
+  // Check if current user is admin or channel owner
+  const canManageChannel = (channelId: string | undefined) => {
+    if (!channelId || !profile?.id) return false
+    const channel = channels.find(c => c.id === channelId)
+    return isAdmin || channel?.created_by === profile.id
+  }
+
   // Check if current user is admin
   useEffect(() => {
     if (workspaceId && profile?.id) {
@@ -204,11 +211,11 @@ export function useChannelManagement(workspaceId: string | undefined, channels: 
   }
 
   const addMember = async (channelId: string, userId: string) => {
-    if (!isAdmin) {
+    if (!canManageChannel(channelId)) {
       toast({
         variant: 'destructive',
         title: 'Permission denied',
-        description: 'Only admins can add members to channels.',
+        description: 'Only admins and channel owners can add members to channels.',
       })
       return false
     }
@@ -249,11 +256,11 @@ export function useChannelManagement(workspaceId: string | undefined, channels: 
   }
 
   const removeMember = async (channelId: string, userId: string) => {
-    if (!isAdmin) {
+    if (!canManageChannel(channelId)) {
       toast({
         variant: 'destructive',
         title: 'Permission denied',
-        description: 'Only admins can remove members from channels.',
+        description: 'Only admins and channel owners can remove members from channels.',
       })
       return false
     }
@@ -281,11 +288,11 @@ export function useChannelManagement(workspaceId: string | undefined, channels: 
   }
 
   const updateChannelPrivacy = async (channelId: string, isPrivate: boolean) => {
-    if (!isAdmin) {
+    if (!canManageChannel(channelId)) {
       toast({
         variant: 'destructive',
         title: 'Permission denied',
-        description: 'Only admins can change channel privacy settings.',
+        description: 'Only admins and channel owners can change channel privacy settings.',
       })
       return false
     }
@@ -354,6 +361,7 @@ export function useChannelManagement(workspaceId: string | undefined, channels: 
 
   return {
     isAdmin,
+    canManageChannel,
     channelMembers,
     workspaceMembers,
     isLoadingChannel,

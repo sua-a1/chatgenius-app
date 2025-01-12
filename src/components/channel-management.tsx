@@ -11,6 +11,7 @@ import { Workspace, Channel, User } from '@/types'
 import { useChannels } from '@/hooks/use-channels'
 import { useChannelManagement } from '@/hooks/use-channel-management'
 import { useToast } from '@/hooks/use-toast'
+import { useAuth } from '@/contexts/auth-context'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -24,9 +25,11 @@ interface ChannelManagementProps {
 }
 
 export function ChannelManagement({ workspace }: ChannelManagementProps) {
+  const { profile } = useAuth()
   const { channels, isLoading: isLoadingChannels } = useChannels(workspace?.id)
   const { 
     isAdmin, 
+    canManageChannel,
     channelMembers, 
     workspaceMembers,
     isLoadingChannel,
@@ -111,8 +114,18 @@ export function ChannelManagement({ workspace }: ChannelManagementProps) {
     return <div className="p-4">Please select a workspace to manage channels.</div>
   }
 
-  if (!isAdmin) {
-    return <div className="p-4">You need admin permissions to manage channels.</div>
+  const canManageSelectedChannel = selectedChannel ? canManageChannel(selectedChannel.id) : false
+
+  if (isLoadingChannels) {
+    return <div className="p-4">Loading channels...</div>
+  }
+
+  if (channels.length === 0) {
+    return <div className="p-4">No channels found in this workspace.</div>
+  }
+
+  if (!isAdmin && !channels.some(channel => profile && channel.created_by === profile.id)) {
+    return <div className="p-4">You need admin permissions or channel ownership to manage channels.</div>
   }
 
   return (
@@ -128,27 +141,29 @@ export function ChannelManagement({ workspace }: ChannelManagementProps) {
               <div className="text-center p-4">No channels found</div>
             ) : (
               channels.map(channel => (
-                <Button 
-                  key={channel.id}
-                  variant={selectedChannel?.id === channel.id ? "default" : "ghost"}
-                  className="w-full justify-start mb-2"
-                  onClick={() => handleSelectChannel(channel)}
-                >
-                  <div className="flex items-center">
-                    <span className="mr-2">#</span>
-                    <span>{channel.name}</span>
-                    {channel.is_private && (
-                      <span className="ml-2 text-xs bg-secondary px-1 rounded">Private</span>
-                    )}
-                  </div>
-                </Button>
+                canManageChannel(channel.id) && (
+                  <Button 
+                    key={channel.id}
+                    variant={selectedChannel?.id === channel.id ? "default" : "ghost"}
+                    className="w-full justify-start mb-2"
+                    onClick={() => handleSelectChannel(channel)}
+                  >
+                    <div className="flex items-center">
+                      <span className="mr-2">#</span>
+                      <span>{channel.name}</span>
+                      {channel.is_private && (
+                        <span className="ml-2 text-xs bg-secondary px-1 rounded">Private</span>
+                      )}
+                    </div>
+                  </Button>
+                )
               ))
             )}
           </ScrollArea>
         </div>
 
         <div className="w-2/3">
-          {selectedChannel ? (
+          {selectedChannel && canManageSelectedChannel ? (
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <h3 className="text-lg font-semibold">#{selectedChannel.name}</h3>
