@@ -64,14 +64,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       
       if (userError) {
         console.error('Error getting user:', userError)
-        // Don't clear profile on error to prevent cascading updates
-        return profile
+        return null
       }
 
       if (!user) {
         console.log('No user found')
-        // Don't clear profile on error to prevent cascading updates
-        return profile
+        return null
       }
 
       console.log('Got user:', user.id)
@@ -95,8 +93,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (error) {
         console.error('Error fetching profile:', error)
-        // Return existing profile on error
-        return profile
+        return null
       }
 
       console.log('Got existing profile:', newProfile)
@@ -104,8 +101,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return newProfile
     } catch (error) {
       console.error('Error in refreshProfile:', error)
-      // Return existing profile on error
-      return profile
+      return null
     }
   }
 
@@ -146,12 +142,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         console.log('Sign-out completed with status:', error instanceof Error ? error.message : error)
       }
 
-      // Redirect after cleanup
-      router.push('/')
+      // Force a hard redirect to root path and let middleware handle the rest
+      window.location.href = '/'
     } catch (error) {
       console.error('Sign-out error:', error)
       // Ensure redirect happens even on error
-      router.push('/')
+      window.location.href = '/'
     }
 
     return Promise.resolve()
@@ -160,6 +156,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     let mounted = true
     let initTimeout: NodeJS.Timeout | null = null
+    let retryTimeout: NodeJS.Timeout | null = null
 
     // Initialize auth state
     const initAuth = async () => {
@@ -167,6 +164,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       try {
         setIsLoading(true)
+        console.log('Initializing auth...')
+
         const { data: { session }, error } = await supabase.auth.getSession()
         
         if (error) {
@@ -178,9 +177,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           return
         }
 
-        if (session?.user && mounted) {
+        if (session?.user && mounted && !isSigningOut) {
           setUser(session.user)
-          await refreshProfile().catch(console.error)
+          const profileResult = await refreshProfile()
+          
+          // If profile fetch fails, retry after a delay
+          if (!profileResult && mounted && initAttempts < 3) {
+            console.log('Profile fetch failed, retrying...')
+            setInitAttempts(prev => prev + 1)
+            retryTimeout = setTimeout(() => {
+              setIsInitialized(false) // Force re-initialization
+            }, 2000)
+            return
+          }
+        } else if (mounted) {
+          // No session or signing out, clear state
+          resetState()
         }
 
         if (mounted) {
@@ -209,29 +221,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       setIsLoading(true)
       
-      // Reset state on sign out
-      if (event === 'SIGNED_OUT') {
+      // Reset state and stop loading on sign out
+      if (event === 'SIGNED_OUT' || isSigningOut) {
         resetState()
         setIsLoading(false)
         return
       }
 
       // Handle sign in and other auth events
-      if (session?.user) {
+      if (session?.user && !isSigningOut) {
         setUser(session.user)
-        if (!isSigningOut) {
-          try {
-            await refreshProfile()
-          } catch (error) {
-            console.error('Error refreshing profile:', error)
+        try {
+          const profileResult = await refreshProfile()
+          if (!profileResult && mounted) {
+            // If profile fetch fails during auth change, force re-initialization
+            setIsInitialized(false)
+            return
+          }
+        } catch (error) {
+          console.error('Error refreshing profile:', error)
+          if (mounted) {
+            setIsInitialized(false)
+            return
           }
         }
       } else {
         setUser(null)
       }
 
-      setIsInitialized(true)
-      setIsLoading(false)
+      if (mounted) {
+        setIsInitialized(true)
+        setIsLoading(false)
+      }
     })
 
     // Listen for profile updates
@@ -259,11 +280,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (initTimeout) {
         clearTimeout(initTimeout)
       }
+      if (retryTimeout) {
+        clearTimeout(retryTimeout)
+      }
       subscription.unsubscribe()
       window.removeEventListener('profileUpdated', handleProfileUpdate as EventListener)
       window.removeEventListener('userSignOut', handleSignOut as EventListener)
     }
-  }, [isInitialized])
+  }, [isInitialized, initAttempts])
 
   const contextValue: AuthContextType = {
     user,

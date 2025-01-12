@@ -101,7 +101,7 @@ export default function LandingPage() {
           animate={{ y: 0, opacity: 1 }}
           transition={{ delay: 0.4, duration: 0.5 }}
         >
-          <Link href="/auth/signin">
+          <Link href="/auth/sign-in">
             <Button size="lg" className="text-lg px-8 bg-[#4A3B8C] hover:bg-[#3A2E6E]">
               Get Started
             </Button>
