@@ -391,19 +391,26 @@ export default function ThreadView({
 
   return (
     <div className="flex flex-col h-full border-l">
-      <div className="flex items-center justify-between p-4 border-b">
-        <div className="flex items-center space-x-2">
-          <Button variant="ghost" size="icon" onClick={onClose}>
-            <X className="h-4 w-4" />
-          </Button>
-          {threadStack.length > 1 && (
+      {/* Header */}
+      <div className="border-b">
+        <div className="flex items-center justify-between p-4">
+          <div className="flex items-center space-x-2">
+            <Button variant="ghost" size="icon" onClick={onClose}>
+              <X className="h-4 w-4" />
+            </Button>
+            <h3 className="text-lg font-semibold">Thread</h3>
+          </div>
+        </div>
+        
+        {/* Thread Stack Navigation */}
+        {threadStack.length > 1 && (
+          <div className="px-4 pb-3">
             <ThreadStackNavigation 
               threadStack={threadStack} 
               onNavigate={navigateToStackIndex} 
             />
-          )}
-          <h3 className="text-lg font-semibold">Thread</h3>
-        </div>
+          </div>
+        )}
       </div>
 
       <ScrollArea className="flex-1">

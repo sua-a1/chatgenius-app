@@ -157,8 +157,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Now clear local state
       resetState()
 
-      // Dispatch cleanup event
-      if (typeof window !== 'undefined') {
+    // Dispatch cleanup event
+    if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('userSignOut', { detail: { immediate: true, skipInit: true } }))
       }
 

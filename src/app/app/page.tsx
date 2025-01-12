@@ -15,6 +15,7 @@ import { useChannels } from '@/hooks/use-channels'
 import { useAuth } from '@/contexts/auth-context'
 import type { Channel } from '@/types'
 import { Dialog } from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
 
 interface Workspace {
   id: string;
@@ -184,34 +185,48 @@ function AppContent() {
         )}
 
         <div className="flex-1">
-          {activeTab === 'chat' && activeChannel && (
-            <ChannelMessageArea
-              key={activeChannel.id}
-              selectedChannelId={activeChannel.id}
-              workspace={activeWorkspace!}
-              onClose={() => setActiveChannel(null)}
-            />
-          )}
+          {/* Stable header with themed search */}
+          <div className="h-16 border-b bg-gradient-to-r from-[#4A3B8C]/5 to-[#5D3B9E]/5 flex items-center justify-center px-4">
+            <div className="w-full max-w-2xl">
+              <Input
+                type="search"
+                placeholder="Search messages..."
+                className="w-full bg-background/50 border-[#4A3B8C]/20 focus-visible:ring-[#4A3B8C]/30 transition-colors placeholder:text-muted-foreground/70"
+                disabled
+              />
+            </div>
+          </div>
 
-          {activeTab === 'chat' && activeDM && (
-            <DirectMessageArea
-              key={activeDM}
-              selectedUserId={activeDM}
-              workspace={activeWorkspace!}
-              onClose={() => setActiveDM(null)}
-            />
-          )}
+          <div className="flex-1 h-[calc(100vh-4rem)]">
+            {activeTab === 'chat' && activeChannel && (
+              <ChannelMessageArea
+                key={activeChannel.id}
+                selectedChannelId={activeChannel.id}
+                workspace={activeWorkspace!}
+                onClose={() => setActiveChannel(null)}
+              />
+            )}
 
-          {activeTab === 'manage' && (
-            <ChannelManagement workspace={activeWorkspace} />
-          )}
+            {activeTab === 'chat' && activeDM && (
+              <DirectMessageArea
+                key={activeDM}
+                selectedUserId={activeDM}
+                workspace={activeWorkspace!}
+                onClose={() => setActiveDM(null)}
+              />
+            )}
 
-          {activeTab === 'admin' && (
-            <AdminPanel
-              workspaces={workspaces}
-              onDeleteWorkspace={handleDeleteWorkspace}
-            />
-          )}
+            {activeTab === 'manage' && (
+              <ChannelManagement workspace={activeWorkspace} />
+            )}
+
+            {activeTab === 'admin' && (
+              <AdminPanel
+                workspaces={workspaces}
+                onDeleteWorkspace={handleDeleteWorkspace}
+              />
+            )}
+          </div>
         </div>
       </div>
 

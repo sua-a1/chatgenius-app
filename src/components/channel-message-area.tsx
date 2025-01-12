@@ -62,6 +62,13 @@ export default function ChannelMessageArea({ workspace, selectedChannelId, onClo
     setEditContent('')
   }
 
+  const handleViewThread = (message: Message) => {
+    setSelectedThread(null)
+    setTimeout(() => {
+      setSelectedThread(message)
+    }, 0)
+  }
+
   if (!workspace || !selectedChannelId) {
     return (
       <div className="flex items-center justify-center h-full text-muted-foreground">
@@ -72,26 +79,17 @@ export default function ChannelMessageArea({ workspace, selectedChannelId, onClo
 
   return (
     <div className="flex flex-col h-full">
-      <div className="border-b px-4 py-2">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-2">
+      <div className="border-b">
+        <div className="flex items-center justify-between p-4">
+          <div className="flex items-center gap-2">
             <h2 className="text-lg font-semibold">#{selectedChannel?.name}</h2>
           </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => {
-              if (selectedChannelId) {
-                window.history.pushState({}, '', `/app/workspaces/${workspace?.id}`);
-                onClose?.();
-              }
-            }}
-            className="h-8 w-8"
-          >
+          <Button variant="ghost" size="icon" onClick={onClose}>
             <X className="h-4 w-4" />
           </Button>
         </div>
       </div>
+
       <div className="flex flex-1 overflow-hidden">
         <div className="flex-1 flex flex-col overflow-hidden">
           <ScrollArea className="flex-1">
@@ -178,7 +176,7 @@ export default function ChannelMessageArea({ workspace, selectedChannelId, onClo
                                   onClick={() => {
                                     const parentMessage = messages.find(m => m.id === message.reply_to)
                                     if (parentMessage) {
-                                      setSelectedThread(parentMessage)
+                                      handleViewThread(parentMessage)
                                     }
                                   }}
                                 >
@@ -222,7 +220,7 @@ export default function ChannelMessageArea({ workspace, selectedChannelId, onClo
                                     variant="ghost"
                                     size="sm"
                                     className="h-7 px-2 text-muted-foreground hover:text-foreground hover:bg-accent flex items-center"
-                                    onClick={() => setSelectedThread(message)}
+                                    onClick={() => handleViewThread(message)}
                                   >
                                     <ArrowUpRight className="h-4 w-4" />
                                     {message.reply_count > 0 ? (
@@ -264,7 +262,7 @@ export default function ChannelMessageArea({ workspace, selectedChannelId, onClo
         </div>
 
         {selectedThread && (
-          <div className="w-96">
+          <div className="w-96 border-l">
             <ThreadView
               parentMessage={{
                 ...selectedThread,
