@@ -44,13 +44,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isLoading, setIsLoading] = useState(true)
   const [isInitialized, setIsInitialized] = useState(false)
   const [initAttempts, setInitAttempts] = useState(0)
+  const [isSigningOut, setIsSigningOut] = useState(false)
   const supabase = createClientComponentClient()
   const router = useRouter()
 
-  // Create signOutEvent only if window is available
-  const signOutEvent = typeof window !== 'undefined' 
-    ? new Event('userSignOut') 
-    : null
+  // Reset function to clear state
+  const resetState = () => {
+    setUser(null)
+    setProfile(null)
+    setIsInitialized(false)
+    setInitAttempts(0)
+    setIsSigningOut(false)
+  }
 
   const refreshProfile = async () => {
     try {
@@ -105,29 +110,48 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   const signOut = async () => {
-    // Clear local state immediately
-    setUser(null)
-    setProfile(null)
-    setIsInitialized(false)
-    setInitAttempts(0)
+    // Set flag to prevent profile refresh during sign-out
+    setIsSigningOut(true)
 
-    // Dispatch cleanup event
-    if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('userSignOut', { detail: { immediate: true } }))
-    }
-
-    // Redirect immediately - don't wait for sign-out
-    router.push('/')
-
-    // Attempt Supabase sign-out in background
     try {
-      await Promise.race([
-        supabase.auth.signOut(),
-        new Promise((_, reject) => setTimeout(() => reject('timeout'), 1000))
-      ])
+      // Clear local state first
+      resetState()
+
+      // Dispatch cleanup event
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('userSignOut', { detail: { immediate: true, skipInit: true } }))
+      }
+
+      // Clear any remaining auth data from localStorage first
+      if (typeof window !== 'undefined') {
+        window.localStorage.removeItem('supabase.auth.token')
+        window.localStorage.removeItem('supabase.auth.expires_at')
+        window.localStorage.removeItem('supabase.auth.refresh_token')
+      }
+
+      // Attempt Supabase sign-out with a longer timeout
+      try {
+        const signOutPromise = supabase.auth.signOut({ scope: 'global' })
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Sign-out timed out, but session data was cleared')), 5000)
+        )
+
+        await Promise.race([signOutPromise, timeoutPromise])
+          .catch((error: Error | unknown) => {
+            // Log but don't throw - we've already cleared local state
+            console.log('Sign-out completed with status:', error instanceof Error ? error.message : error)
+          })
+      } catch (error: unknown) {
+        // Log but don't throw - we've already cleared local state
+        console.log('Sign-out completed with status:', error instanceof Error ? error.message : error)
+      }
+
+      // Redirect after cleanup
+      router.push('/')
     } catch (error) {
-      console.error('Sign-out process error:', error)
-      // Continue even if sign-out fails
+      console.error('Sign-out error:', error)
+      // Ensure redirect happens even on error
+      router.push('/')
     }
 
     return Promise.resolve()
@@ -137,57 +161,42 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     let mounted = true
     let initTimeout: NodeJS.Timeout | null = null
 
+    // Initialize auth state
     const initAuth = async () => {
+      if (!mounted || isInitialized) return
+
       try {
-        console.log('Initializing auth...')
         setIsLoading(true)
-
-        // Get session
-        const { data: { session }, error: sessionError } = await supabase.auth.getSession()
-
-        if (sessionError) {
-          console.error('Error getting session:', sessionError)
+        const { data: { session }, error } = await supabase.auth.getSession()
+        
+        if (error) {
+          console.error('Error getting session:', error)
           if (mounted) {
-            // Don't change state on error, just finish loading
-            setIsLoading(false)
             setIsInitialized(true)
+            setIsLoading(false)
           }
           return
         }
 
+        if (session?.user && mounted) {
+          setUser(session.user)
+          await refreshProfile().catch(console.error)
+        }
+
         if (mounted) {
-          if (session?.user) {
-            console.log('Session found, setting user:', session.user.id)
-            setUser(session.user)
-            const profile = await refreshProfile()
-            if (!profile) {
-              console.log('No profile found, will retry in background')
-              // Retry profile load in background
-              initTimeout = setTimeout(() => {
-                if (mounted) {
-                  refreshProfile().catch(console.error)
-                }
-              }, 1000)
-            }
-          } else {
-            console.log('No session found')
-            // Only clear user state, keep other states if they exist
-            setUser(null)
-          }
           setIsInitialized(true)
           setIsLoading(false)
         }
       } catch (error) {
-        console.error('Error in initAuth:', error)
+        console.error('Auth initialization error:', error)
         if (mounted) {
-          // Don't change state on error, just finish loading
-          setIsLoading(false)
           setIsInitialized(true)
+          setIsLoading(false)
         }
       }
     }
 
-    // Always try to initialize
+    // Always try to initialize if not initialized
     if (!isInitialized) {
       initAuth()
     }
@@ -196,21 +205,37 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       console.log('Auth state changed:', event, session?.user?.id)
       
-      if (mounted) {
-        if (session?.user) {
-          setUser(session.user)
-          refreshProfile().catch(console.error) // Continue even if profile refresh fails
-        } else {
-          setUser(null)
-          // Keep profile data in case of temporary error
-        }
-        setIsInitialized(true)
+      if (!mounted) return
+
+      setIsLoading(true)
+      
+      // Reset state on sign out
+      if (event === 'SIGNED_OUT') {
+        resetState()
+        setIsLoading(false)
+        return
       }
+
+      // Handle sign in and other auth events
+      if (session?.user) {
+        setUser(session.user)
+        if (!isSigningOut) {
+          try {
+            await refreshProfile()
+          } catch (error) {
+            console.error('Error refreshing profile:', error)
+          }
+        }
+      } else {
+        setUser(null)
+      }
+
+      setIsInitialized(true)
+      setIsLoading(false)
     })
 
     // Listen for profile updates
     const handleProfileUpdate = (event: CustomEvent<UserProfile>) => {
-      console.log('Profile update event received:', event.detail)
       if (mounted && event.detail) {
         setProfile(event.detail)
       }
@@ -219,14 +244,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Listen for sign-out events
     const handleSignOut = (event: CustomEvent<{ skipInit?: boolean }>) => {
       if (event.detail?.skipInit) {
-        // If skipInit is true, prevent re-initialization by keeping isInitialized true
         setIsInitialized(true)
       } else {
-        // Otherwise reset initialization state
         setIsInitialized(false)
       }
-      setUser(null)
-      setProfile(null)
+      resetState()
     }
 
     window.addEventListener('profileUpdated', handleProfileUpdate as EventListener)
