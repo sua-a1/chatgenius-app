@@ -115,12 +115,29 @@ function AppContent() {
 
   const handleSelectChannel = useCallback((channelId: string) => {
     if (!activeWorkspace) return
+    
+    // First try to find the channel in the list
     const channel = channels.find(c => c.id === channelId)
     if (channel) {
       setActiveChannel(channel)
       setActiveDM(null)
+      return
     }
-  }, [activeWorkspace, channels])
+
+    // If not found, create a minimal channel object
+    // The full details will be loaded when the channels list updates
+    setActiveChannel({
+      id: channelId,
+      workspace_id: activeWorkspace.id,
+      name: 'Loading...',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      created_by: profile?.id || '',
+      is_private: false,
+      topic: ''
+    })
+    setActiveDM(null)
+  }, [activeWorkspace, channels, profile?.id])
 
   const handleSelectDM = useCallback((userId: string) => {
     setActiveDM(userId)

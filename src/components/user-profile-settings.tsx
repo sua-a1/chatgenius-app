@@ -27,7 +27,7 @@ export function UserProfileSettings({ onClose }: UserProfileSettingsProps) {
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false)
-  const [selectedStatus, setSelectedStatus] = useState<'auto' | UserStatus>('auto')
+  const [selectedStatus, setSelectedStatus] = useState<UserStatus | 'auto'>('auto')
   const supabase = createClientComponentClient()
   const { toast } = useToast()
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -77,11 +77,6 @@ export function UserProfileSettings({ onClose }: UserProfileSettingsProps) {
         email: user.email || '',
         avatar_url: initialProfile?.avatar_url || user.user_metadata?.avatar_url || null,
         full_name: initialProfile?.full_name || user.user_metadata?.full_name || null,
-        notifications: initialProfile?.notifications || {
-          email: true,
-          push: false,
-        },
-        theme: initialProfile?.theme || 'light',
         created_at: initialProfile?.created_at || user.created_at || new Date().toISOString(),
         updated_at: initialProfile?.updated_at || new Date().toISOString()
       }
@@ -98,17 +93,6 @@ export function UserProfileSettings({ onClose }: UserProfileSettingsProps) {
     setProfile((prev: UserProfile | null) => ({ ...prev!, [key]: value }))
   }
 
-  const handleNotificationChange = (key: keyof UserProfile['notifications'], value: boolean) => {
-    if (!profile) return
-    setProfile((prev: UserProfile | null) => ({
-      ...prev!,
-      notifications: {
-        ...prev!.notifications,
-        [key]: value,
-      },
-    }))
-  }
-
   const handleStatusChange = async (value: string) => {
     const status = value as 'auto' | UserStatus
     console.log('Status change requested:', { value, status })
@@ -123,7 +107,7 @@ export function UserProfileSettings({ onClose }: UserProfileSettingsProps) {
       
       // Show success message
       toast({
-        title: 'Status Updated',
+        title: 'Status updated',
         description: status === 'auto' 
           ? 'Automatic status tracking enabled.' 
           : `Your status has been set to ${status}.`,
@@ -149,16 +133,10 @@ export function UserProfileSettings({ onClose }: UserProfileSettingsProps) {
   const hasProfileChanges = () => {
     if (!initialProfile || !profile) return false
     
-    const profileNotifications = profile.notifications || { email: true, push: false }
-    const initialNotifications = initialProfile.notifications || { email: true, push: false }
-    
     return (
       profile.username !== initialProfile.username ||
       profile.full_name !== initialProfile.full_name ||
-      profile.avatar_url !== initialProfile.avatar_url ||
-      profileNotifications.email !== initialNotifications.email ||
-      profileNotifications.push !== initialNotifications.push ||
-      profile.theme !== initialProfile.theme
+      profile.avatar_url !== initialProfile.avatar_url
     )
   }
 
@@ -186,8 +164,6 @@ export function UserProfileSettings({ onClose }: UserProfileSettingsProps) {
           username: profile.username,
           full_name: profile.full_name,
           avatar_url: profile.avatar_url,
-          notifications: profile.notifications,
-          theme: profile.theme,
           updated_at: new Date().toISOString(),
         })
         .eq('id', user.id);
@@ -251,29 +227,13 @@ export function UserProfileSettings({ onClose }: UserProfileSettingsProps) {
     try {
       setIsUploadingAvatar(true);
 
-      // Create optimized file name
-      const fileExt = file.name.split('.').pop()?.toLowerCase() || 'jpg';
-      const fileName = `${Date.now()}.${fileExt}`;
-      const filePath = `${user.id}/${fileName}`;
+      // Upload image
+      const fileExt = file.name.split('.').pop();
+      const filePath = `${user.id}-${Math.random()}.${fileExt}`;
 
-      // Delete old avatar if exists
-      if (profile.avatar_url) {
-        const oldFilePath = profile.avatar_url.split('/').slice(-2).join('/');
-        if (oldFilePath) {
-          await supabase.storage
-            .from('avatars')
-            .remove([oldFilePath])
-            .catch(console.error); // Don't block on cleanup errors
-        }
-      }
-
-      // Upload the new file
-      const { error: uploadError } = await supabase.storage
+      const { error: uploadError, data } = await supabase.storage
         .from('avatars')
-        .upload(filePath, file, {
-          cacheControl: '3600',
-          upsert: true
-        });
+        .upload(filePath, file);
 
       if (uploadError) throw uploadError;
 
@@ -282,80 +242,47 @@ export function UserProfileSettings({ onClose }: UserProfileSettingsProps) {
         .from('avatars')
         .getPublicUrl(filePath);
 
-      // Update profile in database
-      const { error: updateError } = await supabase
-        .from('users')
-        .update({ 
-          avatar_url: publicUrl,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', user.id);
-
-      if (updateError) throw updateError;
-
-      // Update auth metadata
-      const { error: authError } = await supabase.auth.updateUser({
-        data: { avatar_url: publicUrl }
-      });
-
-      if (authError) throw authError;
-
-      // Show success message
-      toast({
-        title: 'Avatar updated',
-        description: 'Your profile picture has been updated successfully.',
-      });
-
-      // Update local state
-      await refreshProfile();
-      
-      // Close dialog and reload
-      onClose();
-      window.location.reload();
+      // Update profile with new avatar URL
+      handleInputChange('avatar_url', publicUrl);
 
     } catch (error: any) {
-      console.error('Error in avatar update process:', error);
-      setIsUploadingAvatar(false);
+      console.error('Avatar upload failed:', error);
       toast({
         variant: 'destructive',
-        title: 'Error updating avatar',
-        description: error.message || 'There was a problem updating your profile picture.',
+        title: 'Error uploading avatar',
+        description: error.message || 'Could not upload avatar. Please try again.',
       });
-    } finally {
-      // Reset file input
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
-      }
+      setIsUploadingAvatar(false);
     }
   };
 
   if (isLoading || !profile) {
     return (
-      <div className="p-4 max-w-md mx-auto">
-        <div className="flex justify-center items-center h-[400px]">
-          Loading...
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Profile Settings</DialogTitle>
+        </DialogHeader>
+        <div className="py-8 text-center text-muted-foreground">
+          Loading profile settings...
         </div>
-      </div>
-    )
+      </DialogContent>
+    );
   }
 
   return (
-    <DialogContent className="sm:max-w-[425px]">
+    <DialogContent>
       <DialogHeader>
         <DialogTitle>Profile Settings</DialogTitle>
       </DialogHeader>
-      <div className="space-y-4">
-        <div className="flex items-center space-x-4">
+      <div className="grid gap-6 py-4">
+        <div className="flex flex-col items-center gap-4">
           <div className="relative group">
-            <Avatar className={`h-20 w-20 transition-opacity ${isUploadingAvatar ? 'opacity-50' : 'group-hover:opacity-75'}`}>
-              <AvatarImage 
-                src={profile.avatar_url || undefined} 
-                className="object-cover"
-              />
+            <Avatar className="h-20 w-20">
+              <AvatarImage src={profile.avatar_url || undefined} />
               <AvatarFallback className="text-2xl">
-              {profile.full_name?.[0] || profile.username?.[0] || profile.email?.[0] || '?'}
-            </AvatarFallback>
-          </Avatar>
+                {profile.full_name?.[0] || profile.username?.[0] || profile.email?.[0] || '?'}
+              </AvatarFallback>
+            </Avatar>
             {!isUploadingAvatar && (
               <div 
                 className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-0 group-hover:bg-opacity-50 transition-all rounded-full cursor-pointer"
@@ -408,44 +335,6 @@ export function UserProfileSettings({ onClose }: UserProfileSettingsProps) {
             value={profile.email}
             disabled
           />
-        </div>
-        <div>
-          <Label>Notifications</Label>
-          <div className="space-y-2">
-            <div className="flex items-center space-x-2">
-              <Switch
-                id="emailNotifications"
-                checked={profile.notifications.email}
-                onCheckedChange={(checked) => handleNotificationChange('email', checked)}
-              />
-              <Label htmlFor="emailNotifications">Email Notifications</Label>
-            </div>
-            <div className="flex items-center space-x-2">
-              <Switch
-                id="pushNotifications"
-                checked={profile.notifications.push}
-                onCheckedChange={(checked) => handleNotificationChange('push', checked)}
-              />
-              <Label htmlFor="pushNotifications">Push Notifications</Label>
-            </div>
-          </div>
-        </div>
-        <div>
-          <Label>Theme</Label>
-          <div className="flex space-x-4">
-            <Button
-              variant={profile.theme === 'light' ? 'default' : 'outline'}
-              onClick={() => handleInputChange('theme', 'light')}
-            >
-              Light
-            </Button>
-            <Button
-              variant={profile.theme === 'dark' ? 'default' : 'outline'}
-              onClick={() => handleInputChange('theme', 'dark')}
-            >
-              Dark
-            </Button>
-          </div>
         </div>
         <div>
           <Label>Presence Status</Label>

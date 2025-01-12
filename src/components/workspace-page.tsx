@@ -45,9 +45,25 @@ export default function WorkspacePage({ workspace, workspaces, onOpenProfileSett
   const { channels, isLoading: isLoadingChannels, createChannel } = useChannels(workspace?.id)
   const { recentChats, isLoading: isLoadingDMs, refreshChats } = useDirectMessages(workspace?.id, null)
   const [displayProfile, setDisplayProfile] = useState(profile)
-  const { members, isLoading: isLoadingMembers } = useWorkspaceMembers(workspace?.id || null)
+  const { members, isLoading: isLoadingMembers, isAdmin } = useWorkspaceMembers(workspace?.id || null)
   const [showMemberSearch, setShowMemberSearch] = useState(false)
   const [memberSearchQuery, setMemberSearchQuery] = useState('')
+
+  // Reset to chat tab when workspace changes
+  useEffect(() => {
+    if (activeTab !== 'chat') {
+      setActiveTab('chat')
+      onTabChange('chat')
+    }
+  }, [workspace?.id])
+
+  // Redirect non-admin users back to chat tab
+  useEffect(() => {
+    if (!isAdmin && (activeTab === 'manage' || activeTab === 'admin')) {
+      setActiveTab('chat')
+      onTabChange('chat')
+    }
+  }, [isAdmin, activeTab])
 
   const filteredMembers = useMemo(() => {
     if (!members) return []
@@ -103,11 +119,14 @@ export default function WorkspacePage({ workspace, workspaces, onOpenProfileSett
     const channel = await createChannel(newChannelName.trim())
     if (channel) {
       setNewChannelName('')
-      onSelectChannel(channel.id)
-      toast({
-        title: 'Channel created',
-        description: `#${channel.name} has been created successfully.`,
-      })
+      // Wait a short moment for the channel list to update
+      setTimeout(() => {
+        onSelectChannel(channel.id)
+        toast({
+          title: 'Channel created',
+          description: `#${channel.name} has been created successfully.`,
+        })
+      }, 500)
     }
   }
 
@@ -168,20 +187,24 @@ export default function WorkspacePage({ workspace, workspaces, onOpenProfileSett
                 <MessageSquare className="h-4 w-4 mr-2" />
                 Chat
               </TabsTrigger>
-              <TabsTrigger 
-                value="manage" 
-                className="flex-1 data-[state=active]:bg-[#4A3B8C]/20 data-[state=active]:text-foreground"
-              >
-                <Users className="h-4 w-4 mr-2" />
-                Manage
-              </TabsTrigger>
-              <TabsTrigger 
-                value="admin" 
-                className="flex-1 data-[state=active]:bg-[#4A3B8C]/20 data-[state=active]:text-foreground"
-              >
-                <Shield className="h-4 w-4 mr-2" />
-                Admin
-              </TabsTrigger>
+              {isAdmin && (
+                <>
+                  <TabsTrigger 
+                    value="manage" 
+                    className="flex-1 data-[state=active]:bg-[#4A3B8C]/20 data-[state=active]:text-foreground"
+                  >
+                    <Users className="h-4 w-4 mr-2" />
+                    Manage
+                  </TabsTrigger>
+                  <TabsTrigger 
+                    value="admin" 
+                    className="flex-1 data-[state=active]:bg-[#4A3B8C]/20 data-[state=active]:text-foreground"
+                  >
+                    <Shield className="h-4 w-4 mr-2" />
+                    Admin
+                  </TabsTrigger>
+                </>
+              )}
             </TabsList>
           </div>
 

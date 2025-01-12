@@ -3,6 +3,13 @@ drop policy if exists "channel_read" on public.channels;
 drop policy if exists "channel_write" on public.channels;
 drop policy if exists "channel_member_read" on public.channel_memberships;
 drop policy if exists "channel_member_write" on public.channel_memberships;
+drop policy if exists "channels_select_policy" on public.channels;
+drop policy if exists "channels_insert_policy" on public.channels;
+drop policy if exists "channels_update_policy" on public.channels;
+drop policy if exists "channels_delete_policy" on public.channels;
+drop policy if exists "channel_memberships_select_policy" on public.channel_memberships;
+drop policy if exists "channel_memberships_insert_policy" on public.channel_memberships;
+drop policy if exists "channel_memberships_delete_policy" on public.channel_memberships;
 
 -- Create helper functions
 create or replace function public.is_workspace_member(workspace_id uuid, user_id uuid)
@@ -95,7 +102,10 @@ create policy "channel_memberships_insert_policy"
         exists (
             select 1 from public.channels c
             where c.id = channel_id
-            and public.is_workspace_admin(c.workspace_id, auth.uid())
+            and (
+                public.is_workspace_admin(c.workspace_id, auth.uid())
+                or c.created_by = auth.uid()
+            )
         )
     );
 
@@ -106,6 +116,9 @@ create policy "channel_memberships_delete_policy"
         exists (
             select 1 from public.channels c
             where c.id = channel_id
-            and public.is_workspace_admin(c.workspace_id, auth.uid())
+            and (
+                public.is_workspace_admin(c.workspace_id, auth.uid())
+                or c.created_by = auth.uid()
+            )
         )
     ); 
