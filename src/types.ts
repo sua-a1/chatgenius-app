@@ -22,10 +22,12 @@ export interface Channel {
   id: string
   workspace_id: string
   name: string
-  description: string | null
+  topic: string | null
   is_private: boolean
+  created_by: string
   created_at: string
-  updated_at: string
+  updated_at?: string
+  members?: User[]
 }
 
 export interface MessageReaction {

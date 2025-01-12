@@ -1,6 +1,6 @@
 'use client'
 
-import { Suspense } from 'react'
+import { Suspense, useCallback } from 'react'
 import { useState, useEffect } from 'react'
 import Sidebar from '@/components/sidebar'
 import WorkspacePage from '@/components/workspace-page'
@@ -15,7 +15,7 @@ import { useWorkspaces } from '@/hooks/use-workspaces'
 import { useChannels } from '@/hooks/use-channels'
 
 export default function Home() {
-  const { workspaces, isLoading } = useWorkspaces()
+  const { workspaces, isLoading, createWorkspace } = useWorkspaces()
   const [activeWorkspace, setActiveWorkspace] = useState<Workspace | null>(null)
   const [activeChannel, setActiveChannel] = useState<Channel | null>(null)
   const [activeDM, setActiveDM] = useState<string | null>(null)
@@ -30,12 +30,19 @@ export default function Home() {
     }
   }, [workspaces, activeWorkspace])
 
-  const handleSelectWorkspace = (workspaceId: string) => {
+  const handleSelectWorkspace = useCallback((workspaceId: string) => {
     const workspace = workspaces.find(w => w.id === workspaceId)
     setActiveWorkspace(workspace || null)
-    setActiveChannel(null)
-    setActiveDM(null)
-  }
+  }, [workspaces])
+
+  const handleCreateWorkspace = useCallback(async (name: string) => {
+    const workspace = await createWorkspace(name)
+    if (workspace) {
+      setActiveWorkspace(workspace)
+      return workspace
+    }
+    return null
+  }, [createWorkspace])
 
   const handleSelectChannel = (channelId: string) => {
     if (!activeWorkspace) return
@@ -51,9 +58,9 @@ export default function Home() {
     setActiveChannel(null)
   }
 
-  const handleOpenProfileSettings = () => {
+  const handleOpenProfileSettings = useCallback(() => {
     setShowProfileSettings(true)
-  }
+  }, [])
 
   const handleCloseProfileSettings = () => {
     setShowProfileSettings(false)
@@ -116,6 +123,7 @@ export default function Home() {
         activeWorkspace={activeWorkspace}
         onSelectWorkspace={handleSelectWorkspace}
         onOpenProfileSettings={handleOpenProfileSettings}
+        onCreateWorkspace={handleCreateWorkspace}
       />
       <div className="flex flex-1">
           <WorkspacePage 

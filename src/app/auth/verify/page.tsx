@@ -1,11 +1,14 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Mail } from "lucide-react"
 
-export default function VerifyPage({
-  searchParams,
-}: {
-  searchParams: { email: string }
-}) {
+type Props = {
+  searchParams: Promise<{ [key: string]: string | undefined }>
+}
+
+export default async function VerifyPage({ searchParams }: Props) {
+  const params = await searchParams
+  const email = params.email || ''
+
   return (
     <div className="flex min-h-screen items-center justify-center bg-background p-4">
       <Card className="w-full max-w-md">
@@ -15,7 +18,7 @@ export default function VerifyPage({
           </div>
           <CardTitle className="text-2xl font-bold">Check your email</CardTitle>
           <CardDescription>
-            We've sent a magic link to {searchParams.email}
+            We've sent a magic link to {email}
           </CardDescription>
         </CardHeader>
         <CardContent className="text-center text-sm text-muted-foreground">

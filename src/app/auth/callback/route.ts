@@ -3,16 +3,16 @@ import { cookies } from 'next/headers'
 import { NextResponse } from 'next/server'
 
 export async function GET(request: Request) {
-  const cookieStore = cookies()
-  const supabase = createRouteHandlerClient({ cookies: () => cookieStore })
+  const requestUrl = new URL(request.url)
+  const code = requestUrl.searchParams.get('code')
+
+  if (!code) {
+    return NextResponse.redirect(`${requestUrl.origin}/auth/signin?error=No code provided`)
+  }
 
   try {
-    const requestUrl = new URL(request.url)
-    const code = requestUrl.searchParams.get('code')
-
-    if (!code) {
-      return NextResponse.redirect(`${requestUrl.origin}/auth/signin?error=No code provided`)
-    }
+    const cookieStore = cookies()
+    const supabase = createRouteHandlerClient({ cookies: () => cookieStore })
 
     // Exchange the code for a session
     const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code)
@@ -69,7 +69,7 @@ export async function GET(request: Request) {
   } catch (error: any) {
     console.error('Auth callback error:', error)
     return NextResponse.redirect(
-      `${new URL(request.url).origin}/auth/signin?error=${encodeURIComponent(error.message || 'An unexpected error occurred')}`
+      `${requestUrl.origin}/auth/signin?error=${encodeURIComponent(error.message || 'An unexpected error occurred')}`
     )
   }
 } 

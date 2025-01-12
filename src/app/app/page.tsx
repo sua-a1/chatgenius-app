@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import Sidebar from '@/components/sidebar'
 import WorkspacePage from '@/components/workspace-page'
@@ -23,7 +23,7 @@ interface Workspace {
   updated_at: string;
 }
 
-export default function AppPage() {
+function AppContent() {
   const searchParams = useSearchParams()
   const { workspaces, isLoading, createWorkspace, deleteWorkspace } = useWorkspaces()
   const [activeWorkspace, setActiveWorkspace] = useState<Workspace | null>(null)
@@ -186,5 +186,17 @@ export default function AppPage() {
         <UserProfileSettings onClose={handleCloseProfileSettings} />
       </Dialog>
     </div>
+  )
+}
+
+export default function AppPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex h-screen items-center justify-center">
+        <p className="text-gray-500">Loading app...</p>
+      </div>
+    }>
+      <AppContent />
+    </Suspense>
   )
 } 
