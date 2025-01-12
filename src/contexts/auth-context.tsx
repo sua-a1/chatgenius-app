@@ -45,6 +45,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isInitialized, setIsInitialized] = useState(false)
   const [initAttempts, setInitAttempts] = useState(0)
   const [isSigningOut, setIsSigningOut] = useState(false)
+  const [isInitializing, setIsInitializing] = useState(false)
   const supabase = createClientComponentClient()
   const router = useRouter()
 
@@ -59,10 +60,36 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const refreshProfile = async () => {
     try {
+      // Skip profile refresh if signing out
+      if (isSigningOut) {
+        console.log('Skipping profile refresh during sign-out')
+        return null
+      }
+
+      // Skip profile refresh if on public pages
+      if (typeof window !== 'undefined') {
+        const isPublicPage = [
+          '/',
+          '/auth/sign-in',
+          '/auth/sign-out',
+          '/auth/callback',
+          '/auth/verify'
+        ].includes(window.location.pathname)
+        
+        if (isPublicPage) {
+          console.log('Skipping profile refresh on public page')
+          return null
+        }
+      }
+
       console.log('Refreshing profile...')
       const { data: { user }, error: userError } = await supabase.auth.getUser()
       
       if (userError) {
+        if (userError.message.includes('Auth session missing')) {
+          // This is expected when not authenticated
+          return null
+        }
         console.error('Error getting user:', userError)
         return null
       }
@@ -110,7 +137,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setIsSigningOut(true)
 
     try {
-      // Clear local state first
+      // Attempt Supabase sign-out first, before clearing state
+      try {
+        const signOutPromise = supabase.auth.signOut({ scope: 'global' })
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Sign-out timed out')), 5000)
+        )
+
+        await Promise.race([signOutPromise, timeoutPromise])
+          .catch((error: Error | unknown) => {
+            // Log but continue with cleanup
+            console.log('Sign-out status:', error instanceof Error ? error.message : error)
+          })
+      } catch (error: unknown) {
+        // Log but continue with cleanup
+        console.log('Sign-out status:', error instanceof Error ? error.message : error)
+      }
+
+      // Now clear local state
       resetState()
 
       // Dispatch cleanup event
@@ -118,35 +162,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         window.dispatchEvent(new CustomEvent('userSignOut', { detail: { immediate: true, skipInit: true } }))
       }
 
-      // Clear any remaining auth data from localStorage first
+      // Clear any remaining auth data from localStorage
       if (typeof window !== 'undefined') {
         window.localStorage.removeItem('supabase.auth.token')
         window.localStorage.removeItem('supabase.auth.expires_at')
         window.localStorage.removeItem('supabase.auth.refresh_token')
       }
 
-      // Attempt Supabase sign-out with a longer timeout
-      try {
-        const signOutPromise = supabase.auth.signOut({ scope: 'global' })
-        const timeoutPromise = new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('Sign-out timed out, but session data was cleared')), 5000)
-        )
-
-        await Promise.race([signOutPromise, timeoutPromise])
-          .catch((error: Error | unknown) => {
-            // Log but don't throw - we've already cleared local state
-            console.log('Sign-out completed with status:', error instanceof Error ? error.message : error)
-          })
-      } catch (error: unknown) {
-        // Log but don't throw - we've already cleared local state
-        console.log('Sign-out completed with status:', error instanceof Error ? error.message : error)
-      }
-
       // Force a hard redirect to root path and let middleware handle the rest
       window.location.href = '/'
     } catch (error) {
       console.error('Sign-out error:', error)
-      // Ensure redirect happens even on error
+      // Still clear state and redirect on error
+      resetState()
       window.location.href = '/'
     }
 
@@ -160,10 +188,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     // Initialize auth state
     const initAuth = async () => {
-      if (!mounted || isInitialized) return
+      if (!mounted || isInitialized || isInitializing || isSigningOut) return
 
       try {
-        setIsLoading(true)
+        setIsInitializing(true)
         console.log('Initializing auth...')
 
         const { data: { session }, error } = await supabase.auth.getSession()
@@ -173,84 +201,105 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           if (mounted) {
             setIsInitialized(true)
             setIsLoading(false)
+            setIsInitializing(false)
           }
           return
         }
 
         if (session?.user && mounted && !isSigningOut) {
           setUser(session.user)
-          const profileResult = await refreshProfile()
           
-          // If profile fetch fails, retry after a delay
-          if (!profileResult && mounted && initAttempts < 3) {
-            console.log('Profile fetch failed, retrying...')
-            setInitAttempts(prev => prev + 1)
-            retryTimeout = setTimeout(() => {
-              setIsInitialized(false) // Force re-initialization
-            }, 2000)
-            return
+          // Only refresh profile if not on public page
+          const isPublicPage = [
+            '/',
+            '/auth/sign-in',
+            '/auth/sign-out',
+            '/auth/callback',
+            '/auth/verify'
+          ].includes(window.location.pathname)
+
+          if (!isPublicPage) {
+            const profileResult = await refreshProfile()
+            
+            // If profile fetch fails, retry after a delay
+            if (!profileResult && mounted && initAttempts < 3 && !isSigningOut) {
+              console.log('Profile fetch failed, retrying...')
+              setInitAttempts(prev => prev + 1)
+              setIsInitializing(false)
+              retryTimeout = setTimeout(() => {
+                setIsInitialized(false) // Force re-initialization
+              }, 2000)
+              return
+            }
           }
-        } else if (mounted) {
-          // No session or signing out, clear state
-          resetState()
         }
 
         if (mounted) {
           setIsInitialized(true)
           setIsLoading(false)
+          setIsInitializing(false)
         }
       } catch (error) {
         console.error('Auth initialization error:', error)
         if (mounted) {
           setIsInitialized(true)
           setIsLoading(false)
+          setIsInitializing(false)
         }
       }
     }
 
-    // Always try to initialize if not initialized
-    if (!isInitialized) {
+    // Only initialize on mount or when forced
+    if (!isInitialized && !isInitializing && !isSigningOut) {
       initAuth()
     }
 
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (!mounted || isSigningOut) return
+
       console.log('Auth state changed:', event, session?.user?.id)
       
-      if (!mounted) return
-
-      setIsLoading(true)
-      
-      // Reset state and stop loading on sign out
-      if (event === 'SIGNED_OUT' || isSigningOut) {
+      if (event === 'SIGNED_OUT') {
         resetState()
         setIsLoading(false)
         return
       }
 
-      // Handle sign in and other auth events
-      if (session?.user && !isSigningOut) {
-        setUser(session.user)
-        try {
-          const profileResult = await refreshProfile()
-          if (!profileResult && mounted) {
-            // If profile fetch fails during auth change, force re-initialization
-            setIsInitialized(false)
-            return
+      // For initial session and sign in, update user without re-initializing
+      if (event === 'INITIAL_SESSION' || event === 'SIGNED_IN') {
+        if (session?.user) {
+          setUser(session.user)
+          
+          // Only dispatch sign-in event for actual sign-ins
+          if (event === 'SIGNED_IN') {
+            window.dispatchEvent(new CustomEvent('userSignedIn', { detail: { userId: session.user.id } }))
           }
-        } catch (error) {
-          console.error('Error refreshing profile:', error)
-          if (mounted) {
-            setIsInitialized(false)
-            return
+
+          // Only refresh profile if not on public page
+          const isPublicPage = [
+            '/',
+            '/auth/sign-in',
+            '/auth/sign-out',
+            '/auth/callback',
+            '/auth/verify'
+          ].includes(window.location.pathname)
+
+          if (!isPublicPage && !isInitializing) {
+            refreshProfile().then(() => {
+              if (mounted) {
+                setIsInitialized(true)
+                setIsLoading(false)
+              }
+            })
+          } else {
+            setIsInitialized(true)
+            setIsLoading(false)
           }
         }
       } else {
-        setUser(null)
-      }
-
-      if (mounted) {
-        setIsInitialized(true)
+        // For other events, just update the user state
+        setUser(session?.user ?? null)
         setIsLoading(false)
       }
     })
@@ -277,17 +326,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     return () => {
       mounted = false
-      if (initTimeout) {
-        clearTimeout(initTimeout)
-      }
-      if (retryTimeout) {
-        clearTimeout(retryTimeout)
-      }
+      if (initTimeout) clearTimeout(initTimeout)
+      if (retryTimeout) clearTimeout(retryTimeout)
       subscription.unsubscribe()
       window.removeEventListener('profileUpdated', handleProfileUpdate as EventListener)
       window.removeEventListener('userSignOut', handleSignOut as EventListener)
     }
-  }, [isInitialized, initAttempts])
+  }, [isInitialized, initAttempts, isSigningOut])
 
   const contextValue: AuthContextType = {
     user,

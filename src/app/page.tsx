@@ -1,12 +1,40 @@
 'use client'
 
-import { motion } from 'framer-motion'
-import Link from 'next/link'
-import Image from 'next/image'
 import { Button } from '@/components/ui/button'
+import { motion } from 'framer-motion'
+import { useRouter } from 'next/navigation'
+import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
 import { DotLottieReact } from '@lottiefiles/dotlottie-react'
 
 export default function LandingPage() {
+  const router = useRouter()
+  const supabase = createClientComponentClient()
+
+  const handleGetStarted = async () => {
+    try {
+      // Only check session without triggering a full auth refresh
+      const { data: { session }, error } = await supabase.auth.getSession()
+      
+      if (error) {
+        console.error('Error checking session:', error)
+        router.push('/auth/sign-in')
+        return
+      }
+      
+      // If user is already signed in, redirect to app
+      if (session?.user) {
+        router.push('/app')
+      } else {
+        // If not signed in, redirect to sign-in page
+        router.push('/auth/sign-in')
+      }
+    } catch (error) {
+      console.error('Error checking auth state:', error)
+      // On error, safely redirect to sign-in
+      router.push('/auth/sign-in')
+    }
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-[#4A3B8C]/2 to-[#5D3B9E]/3 overflow-hidden relative">
       {/* Animated background elements */}
@@ -101,11 +129,13 @@ export default function LandingPage() {
           animate={{ y: 0, opacity: 1 }}
           transition={{ delay: 0.4, duration: 0.5 }}
         >
-          <Link href="/auth/sign-in">
-            <Button size="lg" className="text-lg px-8 bg-[#4A3B8C] hover:bg-[#3A2E6E]">
-              Get Started
-            </Button>
-          </Link>
+          <Button 
+            size="lg" 
+            className="text-lg px-8 bg-[#4A3B8C] hover:bg-[#3A2E6E]"
+            onClick={handleGetStarted}
+          >
+            Get Started
+          </Button>
         </motion.div>
       </div>
     </div>

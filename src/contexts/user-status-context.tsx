@@ -73,34 +73,21 @@ export function UserStatusProvider({ children }: { children: React.ReactNode }) 
     }
   }, [profile?.id])
 
-  // Add sign-out event listener
-  useEffect(() => {
-    const handleSignOut = async () => {
-      console.log('Handling sign-out in UserStatusProvider')
-      await cleanup()
-    }
-
-    window.addEventListener('userSignOut', handleSignOut)
-    return () => {
-      window.removeEventListener('userSignOut', handleSignOut)
-    }
-  }, [cleanup])
-
   // Initialize user's presence when they first log in
   useEffect(() => {
     const initializePresence = async () => {
+      // Skip initialization completely if auth is not initialized yet
       if (!isInitialized) {
-        console.log('Auth not initialized yet, waiting...')
         return
       }
 
+      // Skip initialization if no profile (unauthenticated)
       if (!profile?.id) {
-        console.log('No profile available, skipping presence initialization')
         return
       }
 
-      if (isStatusInitialized) {
-        console.log('Status already initialized')
+      // Skip if already initialized with status
+      if (isStatusInitialized && userStatuses.get(profile.id)) {
         return
       }
 
@@ -111,7 +98,7 @@ export function UserStatusProvider({ children }: { children: React.ReactNode }) 
         
         // Set initial online status
         const now = new Date().toISOString()
-        await supabase
+        const { error } = await supabase
           .from('user_presence')
           .upsert({
             user_id: profile.id,
@@ -122,19 +109,66 @@ export function UserStatusProvider({ children }: { children: React.ReactNode }) 
             onConflict: 'user_id'
           })
         
-        // Mark as initialized in session storage
+        if (error) {
+          console.error('Error setting initial presence:', error)
+          return
+        }
+
+        // Update local status immediately
+        setUserStatuses(prev => {
+          const newStatuses = new Map(prev)
+          newStatuses.set(profile.id, 'online')
+          return newStatuses
+        })
+        
+        // Mark as initialized
         if (typeof window !== 'undefined') {
           window.sessionStorage.setItem('statusInitialized', 'true')
         }
         setIsStatusInitialized(true)
-        console.log('User presence initialized')
       } catch (error) {
         console.error('Error initializing presence:', error)
       }
     }
 
-    initializePresence()
-  }, [profile?.id, isInitialized, isStatusInitialized])
+    // Only try to initialize if we have both auth and profile
+    if (isInitialized && profile?.id) {
+      initializePresence()
+    }
+  }, [profile?.id, isInitialized, isStatusInitialized, userStatuses])
+
+  // Add sign-out event listener
+  useEffect(() => {
+    const handleSignOut = async () => {
+      console.log('Handling sign-out in UserStatusProvider')
+      // Clear local state first
+      setUserStatuses(new Map())
+      setAutoMode(new Set())
+      setIsStatusInitialized(false)
+      if (typeof window !== 'undefined') {
+        window.sessionStorage.removeItem('statusInitialized')
+      }
+      // Then attempt cleanup
+      await cleanup()
+    }
+
+    const handleSignIn = async (e: Event) => {
+      const event = e as CustomEvent<{ userId: string }>
+      console.log('Handling sign-in in UserStatusProvider')
+      // Reset initialization state to force presence setup
+      setIsStatusInitialized(false)
+      if (typeof window !== 'undefined') {
+        window.sessionStorage.removeItem('statusInitialized')
+      }
+    }
+
+    window.addEventListener('userSignOut', handleSignOut)
+    window.addEventListener('userSignedIn', handleSignIn)
+    return () => {
+      window.removeEventListener('userSignOut', handleSignOut)
+      window.removeEventListener('userSignedIn', handleSignIn)
+    }
+  }, [cleanup])
 
   // Handle browser visibility changes
   useEffect(() => {
@@ -146,7 +180,7 @@ export function UserStatusProvider({ children }: { children: React.ReactNode }) 
         const now = new Date().toISOString()
         // Update presence when tab becomes visible
         if (visible) {
-          supabase
+          void supabase
             .from('user_presence')
             .upsert({
               user_id: profile.id,
@@ -155,6 +189,18 @@ export function UserStatusProvider({ children }: { children: React.ReactNode }) 
               updated_at: now
             }, {
               onConflict: 'user_id'
+            })
+            .then(({ error }) => {
+              if (!error) {
+                // Update local status immediately on success
+                setUserStatuses(prev => {
+                  const newStatuses = new Map(prev)
+                  newStatuses.set(profile.id, 'online')
+                  return newStatuses
+                })
+              } else {
+                console.error('Error updating presence on visibility change:', error)
+              }
             })
         }
       }
