@@ -26,45 +26,58 @@ const ACTIVITY_TIMEOUT = 5 * 60 * 1000 // 5 minutes for activity timeout
 const AWAY_TIMEOUT = 5 * 60 * 1000 // 5 minutes before marking as away
 
 export function UserStatusProvider({ children }: { children: React.ReactNode }) {
-  const { profile } = useAuth()
+  const { profile, isInitialized } = useAuth()
   const [userStatuses, setUserStatuses] = useState<Map<string, UserStatus>>(new Map())
   const [autoMode, setAutoMode] = useState<Set<string>>(new Set())
   const [lastActivity, setLastActivity] = useState<Date>(new Date())
   const [isVisible, setIsVisible] = useState<boolean>(true)
-  const [isInitialized, setIsInitialized] = useState(false)
+  const [isStatusInitialized, setIsStatusInitialized] = useState(false)
 
   // Initialize user's presence when they first log in
   useEffect(() => {
     const initializePresence = async () => {
-      if (profile?.id && !isInitialized) {
-        console.log('Initializing user presence for:', profile.id)
-        try {
-          // Set to auto mode by default
-          setAutoMode(prev => new Set(prev).add(profile.id))
-          
-          // Set initial online status
-          const now = new Date().toISOString()
-          await supabase
-            .from('user_presence')
-            .upsert({
-              user_id: profile.id,
-              status: 'online',
-              last_seen: now,
-              updated_at: now
-            }, {
-              onConflict: 'user_id'
-            })
-          
-          setIsInitialized(true)
-          console.log('User presence initialized')
-        } catch (error) {
-          console.error('Error initializing presence:', error)
-        }
+      if (!isInitialized) {
+        console.log('Auth not initialized yet, waiting...')
+        return
+      }
+
+      if (!profile?.id) {
+        console.log('No profile available, skipping presence initialization')
+        return
+      }
+
+      if (isStatusInitialized) {
+        console.log('Status already initialized')
+        return
+      }
+
+      console.log('Initializing user presence for:', profile.id)
+      try {
+        // Set to auto mode by default
+        setAutoMode(prev => new Set(prev).add(profile.id))
+        
+        // Set initial online status
+        const now = new Date().toISOString()
+        await supabase
+          .from('user_presence')
+          .upsert({
+            user_id: profile.id,
+            status: 'online',
+            last_seen: now,
+            updated_at: now
+          }, {
+            onConflict: 'user_id'
+          })
+        
+        setIsStatusInitialized(true)
+        console.log('User presence initialized')
+      } catch (error) {
+        console.error('Error initializing presence:', error)
       }
     }
 
     initializePresence()
-  }, [profile?.id, isInitialized])
+  }, [profile?.id, isInitialized, isStatusInitialized])
 
   // Handle browser visibility changes
   useEffect(() => {

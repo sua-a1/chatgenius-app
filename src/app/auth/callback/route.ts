@@ -15,8 +15,12 @@ export async function GET(request: Request) {
     const supabase = createRouteHandlerClient({ cookies: () => cookieStore })
 
     // Exchange the code for a session
-    const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code)
+    const { data: { session }, error: exchangeError } = await supabase.auth.exchangeCodeForSession(code)
     if (exchangeError) throw exchangeError
+
+    if (!session?.user) {
+      throw new Error('No session or user found after code exchange')
+    }
 
     // Get the user data after exchanging the code
     const { data: { user }, error: getUserError } = await supabase.auth.getUser()
@@ -64,8 +68,17 @@ export async function GET(request: Request) {
       }
     }
 
-    // Redirect to app page instead of root
-    return NextResponse.redirect(`${requestUrl.origin}/app`)
+    // Set the session cookie
+    const response = NextResponse.redirect(`${requestUrl.origin}/app`)
+    response.cookies.set('supabase-auth-token', session.access_token, {
+      path: '/',
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 60 * 60 * 24 * 7 // 1 week
+    })
+
+    return response
   } catch (error: any) {
     console.error('Auth callback error:', error)
     return NextResponse.redirect(

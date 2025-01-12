@@ -23,7 +23,7 @@ export interface UserProfile {
 interface AuthContextType {
   user: User | null
   profile: UserProfile | null
-  refreshProfile: () => Promise<void>
+  refreshProfile: () => Promise<UserProfile | null>
   isLoading: boolean
   isInitialized: boolean
 }
@@ -31,7 +31,7 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType>({
   user: null,
   profile: null,
-  refreshProfile: async () => {},
+  refreshProfile: async () => null,
   isLoading: true,
   isInitialized: false
 })
@@ -52,13 +52,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (userError) {
         console.error('Error getting user:', userError)
         setProfile(null)
-        return
+        return null
       }
 
       if (!user) {
         console.log('No user found')
         setProfile(null)
-        return
+        return null
       }
 
       console.log('Got user:', user.id)
@@ -87,8 +87,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       console.log('Got existing profile:', profile)
       setProfile(profile)
+      return profile
     } catch (error) {
       console.error('Error in refreshProfile:', error)
+      return null
     }
   }
 
@@ -105,19 +107,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         if (sessionError) {
           console.error('Error getting session:', sessionError)
+          setIsInitialized(true)
+          setIsLoading(false)
           return
         }
 
         if (session?.user) {
           setUser(session.user)
-          await refreshProfile()
+          const profile = await refreshProfile()
+          if (!profile) {
+            console.error('Failed to load profile during initialization')
+          }
         }
 
-        setIsInitialized(true)
-        setIsLoading(false)
+        if (mounted) {
+          setIsInitialized(true)
+          setIsLoading(false)
+        }
       } catch (error) {
         console.error('Error in initAuth:', error)
-        setIsLoading(false)
+        if (mounted) {
+          setIsInitialized(true)
+          setIsLoading(false)
+        }
       }
     }
 
@@ -130,7 +142,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (mounted) {
         if (session?.user) {
           setUser(session.user)
-          await refreshProfile()
+          const profile = await refreshProfile()
+          if (!profile) {
+            console.error('Failed to load profile after auth state change')
+          }
         } else {
           setUser(null)
           setProfile(null)
