@@ -2,6 +2,7 @@
 drop function if exists public.get_thread_messages(uuid);
 drop function if exists public.reply_to_message(uuid, text);
 drop function if exists public.create_thread_reply(uuid, text);
+drop function if exists public.create_thread_reply(uuid, text, text);
 
 -- Simple function to get thread messages
 create or replace function public.get_thread_messages(thread_id uuid)
@@ -51,7 +52,8 @@ $$;
 -- Simple function to create a reply
 create or replace function public.create_thread_reply(
   thread_parent_id uuid,
-  message_content text
+  message_content text,
+  p_attachments text default null
 )
 returns uuid
 language plpgsql
@@ -61,6 +63,7 @@ as $$
 declare
   channel_id_var uuid;
   new_message_id uuid;
+  attachments_array text[];
 begin
   -- Get channel ID and verify access in one step
   select m.channel_id into channel_id_var
@@ -73,6 +76,11 @@ begin
     raise exception 'Access denied or parent message not found';
   end if;
 
+  -- Convert comma-separated attachments to array
+  if p_attachments is not null then
+    attachments_array := string_to_array(p_attachments, ',');
+  end if;
+
   -- Insert the reply
   insert into messages (
     channel_id,
@@ -80,6 +88,7 @@ begin
     content,
     reply_to,
     reply_count,
+    attachments,
     created_at,
     updated_at
   ) values (
@@ -88,6 +97,12 @@ begin
     message_content,
     thread_parent_id,
     0,
+    case 
+      when attachments_array is not null then 
+        (select array_agg(json_build_object('url', url, 'filename', split_part(url, '/', -1)))::jsonb[] 
+         from unnest(attachments_array) as url)
+      else null
+    end,
     now(),
     now()
   ) returning id into new_message_id;
@@ -103,4 +118,4 @@ $$;
 
 -- Grant execute permissions
 grant execute on function public.get_thread_messages(uuid) to authenticated;
-grant execute on function public.create_thread_reply(uuid, text) to authenticated; 
+grant execute on function public.create_thread_reply(uuid, text, text) to authenticated; 

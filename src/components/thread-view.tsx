@@ -28,7 +28,7 @@ interface ThreadMessage extends Message {
 interface ThreadViewProps {
   parentMessage: Message & { workspace_id: string }
   onClose: () => void
-  sendMessage: (content: string, replyTo: string) => Promise<boolean>
+  sendMessage: (content: string, replyTo: string, attachments?: string[]) => Promise<boolean>
   loadThreadMessages: (messageId: string) => Promise<Message[]>
   updateMessage: (messageId: string, content: string) => Promise<boolean>
   deleteMessage: (messageId: string) => Promise<boolean>
@@ -367,8 +367,8 @@ export default function ThreadView({
   }, [messages])
 
   // Add message composer handlers
-  const handleSendMessage = useCallback(async (content: string) => {
-    const success = await sendMessageProp(content, replyingTo?.id || currentThreadParent.id)
+  const handleSendMessage = useCallback(async (content: string, attachments?: string[]) => {
+    const success = await sendMessageProp(content, replyingTo?.id || currentThreadParent.id, attachments)
     if (success) {
       setReplyingTo(null)
     }

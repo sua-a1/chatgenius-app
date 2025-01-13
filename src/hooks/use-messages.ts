@@ -5,125 +5,127 @@ import { useAuth } from '@/contexts/auth-context'
 import { supabase } from '@/lib/supabase'
 import { useToast } from './use-toast'
 
-interface MessageReaction {
-  id: string
-  message_id: string
-  user_id: string
-  emoji: string
-  created_at: string
-  username: string
-  avatar_url: string | null
-}
-
-interface Message {
+export type Message = {
   id: string
   content: string
-  created_at: string
-  user_id: string
   channel_id: string
+  user_id: string
+  reply_to: string | null
+  reply_count: number
+  attachments: any[] | null
+  created_at: string
+  updated_at: string
+}
+
+export type MessageWithUser = Message & {
   user: {
     id: string
     username: string
     avatar_url: string | null
   }
-  reactions: MessageReaction[]
 }
 
-interface DatabaseResponse {
-  id: string
-  content: string
-  created_at: string
-  user_id: string
-  channel_id: string
-  user: {
-    id: string
-    username: string
-    avatar_url: string | null
-  }
-  message_reactions_with_users: MessageReaction[]
-}
-
-export function useMessages(channelId: string | undefined) {
-  const { profile } = useAuth()
+export function useMessages(workspaceId: string | undefined) {
+  const { profile, isInitialized } = useAuth()
   const { toast } = useToast()
-  const [messages, setMessages] = useState<Message[]>([])
+  const [messages, setMessages] = useState<MessageWithUser[]>([])
   const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
-    if (!channelId) return
+    if (!isInitialized) {
+      console.log('Messages: Auth not initialized yet')
+      return
+    }
 
-    setIsLoading(true)
+    if (!workspaceId || !profile?.id) {
+      console.log('Messages: No workspace ID or profile available')
+      setMessages([])
+      setIsLoading(false)
+      return
+    }
+
+    console.log('Messages: Loading messages for workspace:', workspaceId)
     loadMessages()
 
-    // Set up realtime subscription
-    const channel = supabase
-      .channel(`messages:${channelId}`)
+    // Set up realtime subscriptions
+    const messagesChannel = supabase
+      .channel(`messages:${workspaceId}`)
       .on(
         'postgres_changes',
         {
           event: '*',
           schema: 'public',
           table: 'messages',
-          filter: `channel_id=eq.${channelId}`
+          filter: `channel_id=in.(select id from channels where workspace_id=eq.${workspaceId})`,
         },
-        () => {
-          loadMessages()
-        }
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'message_reactions_with_users',
-          filter: `message_id=in.(select id from messages where channel_id=${channelId})`
-        },
-        () => {
-          loadMessages()
+        async () => {
+          await loadMessages()
         }
       )
       .subscribe()
 
     return () => {
-      channel.unsubscribe()
+      messagesChannel.unsubscribe()
     }
-  }, [channelId])
+  }, [workspaceId, profile?.id, isInitialized])
 
   const loadMessages = async () => {
     try {
+      setIsLoading(true)
+      
+      // Get all channels in the workspace
+      const { data: channels, error: channelsError } = await supabase
+        .from('channels')
+        .select('id')
+        .eq('workspace_id', workspaceId)
+
+      if (channelsError) throw channelsError
+
+      if (!channels.length) {
+        setMessages([])
+        return
+      }
+
+      const channelIds = channels.map(c => c.id)
+
+      // Get all messages from these channels
       const { data, error } = await supabase
         .from('messages')
         .select(`
           *,
-          user:users(id, username, avatar_url),
-          message_reactions_with_users(*)
+          user:users!messages_user_id_fkey (
+            id,
+            username,
+            avatar_url
+          )
         `)
-        .eq('channel_id', channelId)
-        .order('created_at', { ascending: true })
+        .in('channel_id', channelIds)
+        .order('created_at', { ascending: false })
 
       if (error) throw error
 
-      setMessages(
-        (data as DatabaseResponse[]).map(message => ({
-          ...message,
-          user: message.user,
-          reactions: message.message_reactions_with_users || []
-        }))
-      )
-    } catch (error) {
+      setMessages(data?.map(message => ({
+        ...message,
+        user: message.user || {
+          id: message.user_id,
+          username: 'Deleted User',
+          avatar_url: null
+        }
+      })) || [])
+    } catch (error: any) {
       console.error('Error loading messages:', error)
       toast({
-        variant: 'destructive',
         title: 'Error loading messages',
-        description: 'Could not load messages. Please try again.',
+        description: error.message,
+        variant: 'destructive',
       })
     } finally {
       setIsLoading(false)
     }
   }
 
-  const sendMessage = async (content: string) => {
-    if (!profile) return false
+  const sendMessage = async (content: string, channelId: string) => {
+    if (!profile?.id) return false
 
     try {
       const { error } = await supabase
@@ -148,7 +150,7 @@ export function useMessages(channelId: string | undefined) {
   }
 
   const deleteMessage = async (messageId: string) => {
-    if (!profile) return false
+    if (!profile?.id) return false
 
     try {
       const { error } = await supabase
@@ -171,7 +173,7 @@ export function useMessages(channelId: string | undefined) {
   }
 
   const updateMessage = async (messageId: string, content: string) => {
-    if (!profile) return false
+    if (!profile?.id) return false
 
     try {
       const { error } = await supabase
@@ -196,8 +198,18 @@ export function useMessages(channelId: string | undefined) {
   return {
     messages,
     isLoading,
+    loadMessages,
     sendMessage,
     deleteMessage,
     updateMessage,
-  }
+  } as const
+}
+
+export type UseMessagesReturn = {
+  messages: MessageWithUser[]
+  isLoading: boolean
+  loadMessages: () => Promise<void>
+  sendMessage: (content: string, channelId: string) => Promise<boolean>
+  deleteMessage: (messageId: string) => Promise<boolean>
+  updateMessage: (messageId: string, content: string) => Promise<boolean>
 } 

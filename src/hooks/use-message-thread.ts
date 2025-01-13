@@ -27,32 +27,82 @@ export function useMessageThread(threadId: string | null) {
             filter: `reply_to=eq.${threadId}`,
           },
           async (payload) => {
-            console.log('Thread message change:', payload)
+            console.log('[DEBUG] Thread message change:', payload)
             if (payload.eventType === 'INSERT') {
               // Add new message to state
               const message = payload.new as Message
+              console.log('[DEBUG] New thread message:', message)
               // Fetch user info for the new message
-              const { data: userData } = await supabase
-                .from('users')
-                .select('id, username, avatar_url')
-                .eq('id', message.user_id)
+              const { data: messageData } = await supabase
+                .from('messages')
+                .select(`
+                  *,
+                  user:users!inner (
+                    id,
+                    username,
+                    avatar_url
+                  )
+                `)
+                .eq('id', message.id)
                 .single()
 
-              if (userData) {
-                setMessages(prev => [...prev, { ...message, user: userData }])
+              console.log('[DEBUG] Fetched thread message data:', messageData)
+
+              if (messageData) {
+                const formattedMessage = {
+                  ...messageData,
+                  user: messageData.user,
+                  attachments: Array.isArray(messageData.attachments) ? messageData.attachments : []
+                }
+                console.log('[DEBUG] Formatted thread message:', formattedMessage)
+                setMessages(prev => {
+                  console.log('[DEBUG] Previous messages:', prev)
+                  const newMessages = [...prev, formattedMessage]
+                  console.log('[DEBUG] Updated messages:', newMessages)
+                  return newMessages
+                })
                 setReplyCount(prev => prev + 1)
               }
             } else if (payload.eventType === 'DELETE') {
               // Remove message from state
               const messageId = payload.old.id
+              console.log('[DEBUG] Deleting thread message:', messageId)
               setMessages(prev => prev.filter(m => m.id !== messageId))
               setReplyCount(prev => Math.max(0, prev - 1))
             } else if (payload.eventType === 'UPDATE') {
-              // Update message in place
-              const updatedMessage = payload.new as Message
-              setMessages(prev => prev.map(m => 
-                m.id === updatedMessage.id ? { ...m, ...updatedMessage } : m
-              ))
+              console.log('[DEBUG] Updating thread message:', payload.new)
+              // Fetch full message data for the update
+              const { data: messageData } = await supabase
+                .from('messages')
+                .select(`
+                  *,
+                  user:users!inner (
+                    id,
+                    username,
+                    avatar_url
+                  )
+                `)
+                .eq('id', payload.new.id)
+                .single()
+
+              console.log('[DEBUG] Fetched updated thread message data:', messageData)
+
+              if (messageData) {
+                const formattedMessage = {
+                  ...messageData,
+                  user: messageData.user,
+                  attachments: Array.isArray(messageData.attachments) ? messageData.attachments : []
+                }
+                console.log('[DEBUG] Formatted updated thread message:', formattedMessage)
+                setMessages(prev => {
+                  console.log('[DEBUG] Previous messages before update:', prev)
+                  const newMessages = prev.map(m => 
+                    m.id === formattedMessage.id ? formattedMessage : m
+                  )
+                  console.log('[DEBUG] Messages after update:', newMessages)
+                  return newMessages
+                })
+              }
             }
           }
         )
@@ -69,29 +119,45 @@ export function useMessageThread(threadId: string | null) {
 
     try {
       setIsLoading(true)
+      console.log('[DEBUG] Loading thread messages for thread:', threadId)
       const { data, error } = await supabase
-        .rpc('get_thread_messages', {
-          thread_id: threadId
-        })
+        .from('messages')
+        .select(`
+          *,
+          user:users!inner (
+            id,
+            username,
+            avatar_url
+          ),
+          message_reactions_with_users(*)
+        `)
+        .eq('reply_to', threadId)
+        .order('created_at', { ascending: true })
 
       if (error) throw error
 
+      console.log('[DEBUG] Raw thread messages:', data)
+      
       // Transform the data to match our Message type
-      const typedMessages = data?.map((message: any) => ({
-        id: message.id,
-        channel_id: message.channel_id,
-        user_id: message.user_id,
-        content: message.content,
-        reply_to: message.reply_to,
-        reply_count: message.reply_count,
-        created_at: message.created_at,
-        updated_at: message.updated_at,
-        user: {
-          id: message.user_id,
-          username: message.user_username,
-          avatar_url: message.user_avatar_url
+      const typedMessages = data?.map((message: any) => {
+        console.log('[DEBUG] Processing thread message:', message)
+        const transformed = {
+          id: message.id,
+          channel_id: message.channel_id,
+          user_id: message.user_id,
+          content: message.content,
+          reply_to: message.reply_to,
+          reply_count: message.reply_count,
+          attachments: Array.isArray(message.attachments) ? message.attachments : [],
+          created_at: message.created_at,
+          updated_at: message.updated_at,
+          user: message.user
         }
-      })) as Message[]
+        console.log('[DEBUG] Transformed thread message:', transformed)
+        return transformed
+      }) as Message[]
+      
+      console.log('[DEBUG] All transformed thread messages:', typedMessages)
 
       setMessages(typedMessages || [])
       setReplyCount(typedMessages ? typedMessages.length - 1 : 0) // Subtract 1 to exclude parent message
@@ -107,15 +173,28 @@ export function useMessageThread(threadId: string | null) {
     }
   }
 
-  const replyToMessage = async (content: string) => {
+  const replyToMessage = async (content: string, attachments?: { url: string; filename: string }[]) => {
     if (!profile?.id || !threadId || !content.trim()) return null
 
     try {
+      console.log('[DEBUG] replyToMessage called with:', { content, attachments })
+      const attachmentsString = attachments 
+        ? attachments.map(a => a.url).join(',')
+        : null
+
+      console.log('[DEBUG] Processed attachments:', {
+        raw: attachments,
+        processed: attachmentsString
+      })
+
       const { data: messageId, error } = await supabase
         .rpc('create_thread_reply', {
           thread_parent_id: threadId,
-          message_content: content.trim()
+          content: content.trim(),
+          p_attachments: attachmentsString
         })
+
+      console.log('[DEBUG] create_thread_reply response:', { messageId, error })
 
       if (error) throw error
 

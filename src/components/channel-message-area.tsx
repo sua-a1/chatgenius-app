@@ -79,12 +79,12 @@ export default function ChannelMessageArea({ workspace, selectedChannelId, onClo
 
   return (
     <div className="flex flex-col h-full">
-      <div className="border-b">
+      <div className="border-b bg-gradient-to-r from-[#4A3B8C]/5 to-[#5D3B9E]/5">
         <div className="flex items-center justify-between p-4">
           <div className="flex items-center gap-2">
             <h2 className="text-lg font-semibold">#{selectedChannel?.name}</h2>
           </div>
-          <Button variant="ghost" size="icon" onClick={onClose}>
+          <Button variant="ghost" size="icon" className="hover:bg-[#4A3B8C]/20" onClick={onClose}>
             <X className="h-4 w-4" />
           </Button>
         </div>
@@ -99,7 +99,7 @@ export default function ChannelMessageArea({ workspace, selectedChannelId, onClo
               </div>
             ) : (
               <div className="p-4 space-y-2">
-                {messages.map((message: Message, index: number) => {
+                {messages.map((message, index) => {
                   const previousMessage = index > 0 ? messages[index - 1] : null
                   const isFirstMessageFromUser = !previousMessage || previousMessage.user_id !== message.user_id
                   const timeDiff = previousMessage 

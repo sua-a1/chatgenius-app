@@ -12,17 +12,16 @@ import { formatDistanceToNow } from 'date-fns'
 import { MessageReactions } from './message-reactions'
 import { UserProfileDisplay } from './user-profile-display'
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar'
+import { Channel } from '@/types'
+import { MessageWithUser, UseMessagesReturn } from '@/hooks/use-messages'
 
 interface ChatAreaProps {
-  channel: {
-    id: string
-    name: string
-  } | null
+  channel: Channel
 }
 
 export default function ChatArea({ channel }: ChatAreaProps) {
   const { profile } = useAuth()
-  const { messages, isLoading, sendMessage, deleteMessage, updateMessage } = useMessages(channel?.id)
+  const { messages, isLoading, sendMessage, deleteMessage, updateMessage }: UseMessagesReturn = useMessages(channel?.id)
   const [newMessage, setNewMessage] = useState('')
   const [editingMessage, setEditingMessage] = useState<string | null>(null)
   const [editContent, setEditContent] = useState('')
@@ -40,7 +39,7 @@ export default function ChatArea({ channel }: ChatAreaProps) {
     e.preventDefault()
     if (!newMessage.trim() || !channel) return
 
-    const success = await sendMessage(newMessage.trim())
+    const success = await sendMessage(newMessage.trim(), channel.id)
     if (success) {
       setNewMessage('')
     }

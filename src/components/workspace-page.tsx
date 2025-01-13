@@ -23,6 +23,7 @@ import { useWorkspaceMembers } from '@/hooks/use-workspace-members'
 import { Command, CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command'
 import { UserAvatar } from '@/components/ui/user-avatar'
 import { Logo } from '@/components/logo'
+import { useMessages } from '@/hooks/use-messages'
 
 interface WorkspacePageProps {
   workspace?: Workspace | null
@@ -43,6 +44,7 @@ export default function WorkspacePage({ workspace, workspaces, onOpenProfileSett
   const [activeTab, setActiveTab] = useState('chat')
   const { toast } = useToast()
   const { channels, isLoading: isLoadingChannels, createChannel } = useChannels(workspace?.id)
+  const { messages, isLoading: isLoadingMessages } = useMessages(workspace?.id)
   const { recentChats, isLoading: isLoadingDMs, refreshChats } = useDirectMessages(workspace?.id, null)
   const [displayProfile, setDisplayProfile] = useState(profile)
   const { members, isLoading: isLoadingMembers, isAdmin } = useWorkspaceMembers(workspace?.id || null)
@@ -166,13 +168,20 @@ export default function WorkspacePage({ workspace, workspaces, onOpenProfileSett
               {workspace && <h1 className="text-xl font-semibold truncate text-foreground/90">{workspace.name}</h1>}
             </div>
           ) : (
-            <div className="flex-1 flex justify-center">
+            <div className="flex items-center justify-end flex-1 pr-1">
               <span className="text-xl font-semibold text-foreground/90">{workspace?.name[0]}</span>
             </div>
           )}
-          <Button variant="ghost" size="icon" onClick={() => setIsCollapsed(!isCollapsed)} className="hover:bg-[#4A3B8C]/10 shrink-0">
-            {isCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
-          </Button>
+          <div className={`flex items-center ${isCollapsed ? "w-7" : "pr-4"}`}>
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              onClick={() => setIsCollapsed(!isCollapsed)} 
+              className={`hover:bg-[#4A3B8C]/10 shrink-0 ${isCollapsed ? "h-7 w-7" : ""}`}
+            >
+              {isCollapsed ? <ChevronRight className="h-3 w-3" /> : <ChevronLeft className="h-4 w-4" />}
+            </Button>
+          </div>
         </div>
       </div>
 
@@ -211,11 +220,11 @@ export default function WorkspacePage({ workspace, workspaces, onOpenProfileSett
           {activeTab === 'chat' && (
             <div className="flex-1 overflow-hidden flex flex-col">
               <ScrollArea className="flex-1">
-                <div className="px-2 py-4 space-y-4">
+                <div className="px-4 py-6 space-y-6">
                   {/* Channels Section */}
                   <div>
-                    <h2 className="text-lg font-semibold px-2 mb-2">Channels</h2>
-                    <div className="space-y-1">
+                    <h2 className="text-lg font-semibold px-2 mb-4">Channels</h2>
+                    <div className="space-y-2">
                       {isLoadingChannels ? (
                         <div className="text-sm text-muted-foreground px-2">Loading channels...</div>
                       ) : channels.length === 0 ? (

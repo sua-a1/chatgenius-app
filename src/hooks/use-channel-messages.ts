@@ -22,45 +22,43 @@ interface MessageUser {
 }
 
 interface Message {
-  id: string
-  content: string
-  created_at: string
-  updated_at: string
-  user_id: string
-  channel_id: string
-  reply_to: string | null
-  reply_count: number
-  user?: {
-    id: string
-    username: string | null
-    avatar_url: string | null
-  }
-  reactions: MessageReaction[]
+  id: string;
+  content: string;
+  created_at: string;
+  updated_at: string;
+  user_id: string;
+  channel_id: string;
+  workspace_id: string;
+  reply_to: string | null;
+  reply_count: number;
   attachments?: Array<{
-    url: string
-    filename: string
-  }>
+    url: string;
+    filename: string;
+  }> | null;
+  user: {
+    id: string;
+    username: string | null;
+    avatar_url: string | null;
+  };
+  reactions: MessageReaction[];
 }
 
 interface DatabaseResponse {
-  id: string
-  content: string
-  created_at: string
-  updated_at: string
-  user_id: string
-  channel_id: string
-  reply_to: string | null
-  reply_count: number
-  attachments: Array<{
-    url: string
-    filename: string
-  }> | null
+  id: string;
+  content: string;
+  created_at: string;
+  updated_at: string;
+  user_id: string;
+  channel_id: string;
+  reply_to: string | null;
+  reply_count: number;
+  attachments: Array<{ url: string; filename: string; }> | null;
   user: {
-    id: string
-    username: string | null
-    avatar_url: string | null
-  }
-  message_reactions_with_users: MessageReaction[]
+    id: string;
+    username: string | null;
+    avatar_url: string | null;
+  } | null;
+  message_reactions_with_users: any[];
 }
 
 interface Channel {
@@ -104,7 +102,101 @@ export function useChannelMessages(workspaceId: string | undefined, selectedChan
     if (!selectedChannelId) return
 
     try {
+      console.log('[DEBUG] Loading messages for channel:', selectedChannelId)
+      console.log('[DEBUG] Using profile ID:', profile?.id)
+      
+      // First check if the channel is public and if user is a workspace member
+      const { data: channel, error: channelError } = await supabase
+        .from('channels')
+        .select('id, is_private, workspace_id, name')
+        .eq('id', selectedChannelId)
+        .single()
+
+      if (channelError) {
+        console.error('[DEBUG] Error fetching channel:', channelError)
+        throw channelError
+      }
+      
+      console.log('[DEBUG] Full channel data:', channel)
+      console.log('[DEBUG] Channel ID consistency check:', {
+        selectedChannelId,
+        channelFromDB: channel.id,
+        match: selectedChannelId === channel.id
+      })
+
+      // For private channels, check channel membership
+      if (channel.is_private) {
+        console.log('[DEBUG] Channel is private, checking membership')
+        const { data: membership, error: membershipError } = await supabase
+          .from('channel_memberships')
+          .select('user_id')
+          .eq('channel_id', selectedChannelId)
+          .eq('user_id', profile?.id)
+          .single()
+
+        if (membershipError && membershipError.code !== 'PGRST116') {
+          console.error('[DEBUG] Error checking channel membership:', membershipError)
+          throw membershipError
+        }
+
+        if (!membership) {
+          console.log('[DEBUG] User does not have access to this private channel')
+          setMessages([])
+          setIsLoading(false)
+          return
+        }
+      } else {
+        console.log('[DEBUG] Channel is public, checking workspace membership')
+        // For public channels, check workspace membership
+        const { data: workspaceMembership, error: workspaceError } = await supabase
+          .from('workspace_memberships')
+          .select('user_id')
+          .eq('workspace_id', channel.workspace_id)
+          .eq('user_id', profile?.id)
+          .single()
+
+        if (workspaceError && workspaceError.code !== 'PGRST116') {
+          console.error('[DEBUG] Error checking workspace membership:', workspaceError)
+          throw workspaceError
+        }
+
+        if (!workspaceMembership) {
+          console.log('[DEBUG] User is not a member of this workspace')
+          setMessages([])
+          setIsLoading(false)
+          return
+        }
+        console.log('[DEBUG] User has workspace access, proceeding to load messages')
+      }
+
+      // Debug: Check if messages exist in this channel
+      const { count: messageCount, error: countError } = await supabase
+        .from('messages')
+        .select('*', { count: 'exact', head: true })
+        .eq('channel_id', selectedChannelId)
+
+      if (countError) {
+        console.error('[DEBUG] Error counting messages:', countError)
+      } else {
+        console.log('[DEBUG] Messages in channel:', messageCount)
+      }
+
+      // Debug: Check channel membership for RLS
+      const { data: channelAccess, error: accessError } = await supabase
+        .from('channel_memberships')
+        .select('user_id')
+        .eq('channel_id', selectedChannelId)
+        .eq('user_id', profile?.id)
+
+      console.log('[DEBUG] Channel membership check:', { channelAccess, accessError })
+
       // Load messages that are not replies (reply_to is null)
+      console.log('[DEBUG] Loading messages with query:', {
+        channelId: selectedChannelId,
+        userId: profile?.id,
+        workspaceId: channel.workspace_id
+      })
+
       const { data, error } = await supabase
         .from('messages')
         .select(`
@@ -117,35 +209,33 @@ export function useChannelMessages(workspaceId: string | undefined, selectedChan
           reply_to,
           reply_count,
           attachments,
-          user:users!inner(id, username, avatar_url),
+          user:users!messages_user_id_fkey (
+            id,
+            username,
+            avatar_url
+          ),
           message_reactions_with_users(*)
         `)
         .eq('channel_id', selectedChannelId)
         .is('reply_to', null)
-        .order('created_at', { ascending: true })
+        .order('created_at', { ascending: true }) as unknown as { data: DatabaseResponse[], error: any }
 
-      if (error) throw error
+      if (error) {
+        console.error('[DEBUG] Error loading messages:', error)
+        throw error
+      }
 
-      const messages = data.map(message => {
-        const userData = Array.isArray(message.user) ? message.user[0] : message.user
-        return {
-          id: message.id,
-          content: message.content,
-          created_at: message.created_at,
-          updated_at: message.updated_at,
-          user_id: message.user_id,
-          channel_id: message.channel_id,
-          reply_to: message.reply_to,
-          reply_count: message.reply_count,
-          attachments: message.attachments || [],
-          user: {
-            id: userData.id,
-            username: userData.username,
-            avatar_url: userData.avatar_url
-          },
-          reactions: message.message_reactions_with_users || []
-        }
-      })
+      const messages: Message[] = data?.map((message: any) => ({
+        ...message,
+        workspace_id: channel.workspace_id,
+        user: {
+          id: message.user?.id ?? 'deleted',
+          username: message.user?.username ?? 'Deleted User',
+          avatar_url: message.user?.avatar_url ?? null
+        },
+        reactions: message.message_reactions_with_users,
+        attachments: message.attachments
+      })) ?? [];
 
       setMessages(messages)
     } catch (error) {
@@ -158,7 +248,7 @@ export function useChannelMessages(workspaceId: string | undefined, selectedChan
     } finally {
       setIsLoading(false)
     }
-  }, [selectedChannelId, toast])
+  }, [selectedChannelId, toast, profile?.id])
 
   useEffect(() => {
     if (!workspaceId || !selectedChannelId || !profile?.id) {
@@ -197,6 +287,7 @@ export function useChannelMessages(workspaceId: string | undefined, selectedChan
               updated_at: payload.new.updated_at,
               user_id: payload.new.user_id,
               channel_id: payload.new.channel_id,
+              workspace_id: workspaceId!,
               reply_to: payload.new.reply_to,
               reply_count: payload.new.reply_count,
               attachments: payload.new.attachments || [],

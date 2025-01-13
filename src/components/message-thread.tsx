@@ -1,29 +1,31 @@
 import { useState } from 'react'
-import { useMessageThread } from '@/hooks/use-message-thread'
-import { Message } from '@/types'
-import { ScrollArea } from '@/components/ui/scroll-area'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
-import { X } from 'lucide-react'
+import { ScrollArea } from '@/components/ui/scroll-area'
+import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar'
+import { FilePreview } from '@/components/ui/file-preview'
+import { FileUpload } from '@/components/ui/file-upload'
+import { X, Paperclip } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import { useMessageThread } from '@/hooks/use-message-thread'
+import { Message } from '@/types'
+import { MessageComposer } from '@/components/message-composer'
+import { useAuth } from '@/contexts/auth-context'
 
 interface MessageThreadProps {
-  parentMessage: Message
+  parentMessage: Message & { workspace_id: string }
   onClose: () => void
 }
 
 export function MessageThread({ parentMessage, onClose }: MessageThreadProps) {
-  const [replyContent, setReplyContent] = useState('')
+  const { profile } = useAuth()
   const { messages, isLoading, replyToMessage } = useMessageThread(parentMessage.id)
 
-  const handleSendReply = async () => {
-    if (!replyContent.trim()) return
-
-    const messageId = await replyToMessage(replyContent)
-    if (messageId) {
-      setReplyContent('')
-    }
+  const handleSendMessage = async (content: string, attachments?: string[]) => {
+    console.log('[DEBUG] MessageThread handleSendMessage called with:', { content, attachments })
+    const messageId = await replyToMessage(content, attachments?.map(url => ({ url, filename: url.split('/').pop() || 'file' })))
+    console.log('[DEBUG] Reply sent, messageId:', messageId)
+    return !!messageId
   }
 
   return (
@@ -51,56 +53,44 @@ export function MessageThread({ parentMessage, onClose }: MessageThreadProps) {
                 </span>
               </div>
               <p className="text-sm">{parentMessage.content}</p>
+              {parentMessage.attachments && parentMessage.attachments.length > 0 && (
+                <FilePreview attachments={parentMessage.attachments} />
+              )}
             </div>
           </div>
 
-          {/* Replies */}
-          {isLoading ? (
-            <div className="text-center text-muted-foreground">Loading replies...</div>
-          ) : messages.length <= 1 ? (
-            <div className="text-center text-muted-foreground">No replies yet</div>
-          ) : (
-            <div className="space-y-4 mt-4 pl-4 border-l-2">
-              {messages.filter(m => m.id !== parentMessage.id).map((message) => (
-                <div key={message.id} className="flex items-start space-x-3">
-                  <Avatar className="h-8 w-8">
-                    <AvatarImage src={message.user?.avatar_url} />
-                    <AvatarFallback>{message.user?.username?.[0] || '?'}</AvatarFallback>
-                  </Avatar>
-                  <div className="flex-1 space-y-1">
-                    <div className="flex items-center space-x-2">
-                      <span className="font-medium">{message.user?.username}</span>
-                      <span className="text-xs text-muted-foreground">
-                        {formatDistanceToNow(new Date(message.created_at), { addSuffix: true })}
-                      </span>
-                    </div>
-                    <p className="text-sm">{message.content}</p>
-                  </div>
+          {/* Thread Messages */}
+          {messages.map(message => (
+            <div key={message.id} className="flex items-start space-x-3">
+              <Avatar className="h-8 w-8">
+                <AvatarImage src={message.user?.avatar_url} />
+                <AvatarFallback>{message.user?.username?.[0] || '?'}</AvatarFallback>
+              </Avatar>
+              <div className="flex-1 space-y-1">
+                <div className="flex items-center space-x-2">
+                  <span className="font-medium">{message.user?.username}</span>
+                  <span className="text-xs text-muted-foreground">
+                    {formatDistanceToNow(new Date(message.created_at), { addSuffix: true })}
+                  </span>
                 </div>
-              ))}
+                <p className="text-sm">{message.content}</p>
+                {message.attachments && message.attachments.length > 0 && (
+                  <FilePreview attachments={message.attachments} />
+                )}
+              </div>
             </div>
-          )}
+          ))}
         </div>
       </ScrollArea>
 
-      <div className="p-4 border-t">
-        <div className="space-y-2">
-          <Textarea
-            value={replyContent}
-            onChange={(e) => setReplyContent(e.target.value)}
-            placeholder="Reply to thread..."
-            className="min-h-[100px]"
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault()
-                handleSendReply()
-              }
-            }}
-          />
-          <div className="flex justify-end">
-            <Button onClick={handleSendReply}>Reply</Button>
-          </div>
-        </div>
+      <div className="border-t p-4">
+        <MessageComposer
+          onSendMessage={handleSendMessage}
+          workspaceId={parentMessage.workspace_id}
+          userId={profile?.id || ''}
+          placeholder="Reply to thread..."
+          disabled={!profile?.id}
+        />
       </div>
     </div>
   )

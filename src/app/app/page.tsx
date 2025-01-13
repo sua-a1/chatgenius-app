@@ -16,6 +16,9 @@ import { useAuth } from '@/contexts/auth-context'
 import type { Channel } from '@/types'
 import { Dialog } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
+import { SearchDialog, type SearchResult } from '@/components/search-dialog'
+import { Search } from 'lucide-react'
+import { CommandInput } from '@/components/ui/command'
 
 interface Workspace {
   id: string;
@@ -36,6 +39,8 @@ function AppContent() {
   const [showProfileSettings, setShowProfileSettings] = useState(false)
   const [activeTab, setActiveTab] = useState('chat')
   const { channels } = useChannels(activeWorkspace?.id)
+  const [showSearch, setShowSearch] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
 
   // Redirect to signin if not authenticated
   useEffect(() => {
@@ -156,6 +161,32 @@ function AppContent() {
     setActiveTab(tab)
   }, [])
 
+  const handleSearchResult = useCallback((result: SearchResult) => {
+    setShowSearch(false)
+    setSearchQuery('')
+    
+    switch (result.type) {
+      case 'message':
+        // Navigate to message in channel
+        if (result.channel_id) {
+          handleSelectChannel(result.channel_id)
+          // TODO: Scroll to message - will need to pass message ID to ChannelMessageArea
+          setActiveTab('chat')
+        }
+        break
+      case 'user':
+        // Open DM with user
+        handleSelectDM(result.id)
+        setActiveTab('chat')
+        break
+      case 'channel':
+        // Navigate to channel
+        handleSelectChannel(result.id)
+        setActiveTab('chat')
+        break
+    }
+  }, [handleSelectChannel, handleSelectDM])
+
   // Show loading state while auth is initializing or checking
   if (!isInitialized || isAuthLoading) {
     return (
@@ -204,13 +235,28 @@ function AppContent() {
         <div className="flex-1">
           {/* Stable header with themed search */}
           <div className="h-16 border-b bg-gradient-to-r from-[#4A3B8C]/5 to-[#5D3B9E]/5 flex items-center justify-center px-4">
-            <div className="w-full max-w-2xl">
-              <Input
-                type="search"
-                placeholder="Search messages..."
-                className="w-full bg-background/50 border-[#4A3B8C]/20 focus-visible:ring-[#4A3B8C]/30 transition-colors placeholder:text-muted-foreground/70"
-                disabled
-              />
+            <div className="w-full max-w-2xl relative">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  type="search"
+                  placeholder="Search users, channels, channel messages..."
+                  className="w-full bg-background/50 border-[#4A3B8C]/20 focus-visible:ring-[#4A3B8C]/30 transition-colors placeholder:text-muted-foreground/70 pl-9"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onFocus={() => setShowSearch(true)}
+                />
+                {activeWorkspace && showSearch && (
+                  <SearchDialog
+                    workspaceId={activeWorkspace.id}
+                    open={showSearch}
+                    onOpenChange={setShowSearch}
+                    onSelectResult={handleSearchResult}
+                    query={searchQuery}
+                    onQueryChange={setSearchQuery}
+                  />
+                )}
+              </div>
             </div>
           </div>
 
