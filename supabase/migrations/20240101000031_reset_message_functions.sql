@@ -7,6 +7,9 @@ drop policy if exists "message_read" on public.messages;
 drop policy if exists "message_create" on public.messages;
 drop policy if exists "message_update" on public.messages;
 drop policy if exists "message_delete" on public.messages;
+drop policy if exists "Users can view message reactions in their channels" on public.message_reactions;
+drop policy if exists "Users can add reactions to messages in their channels" on public.message_reactions;
+drop policy if exists "Users can remove their own reactions" on public.message_reactions;
 
 drop function if exists public.get_thread_messages(uuid);
 drop function if exists public.reply_to_message(uuid, text);
@@ -18,7 +21,7 @@ drop function if exists public.update_message_reply_count();
 drop view if exists public.message_reactions_with_users;
 drop table if exists public.user_mentions;
 drop table if exists public.message_reactions;
-drop table if exists public.messages;
+drop table if exists public.messages cascade;
 
 -- Recreate the messages table with correct structure
 create table public.messages (
@@ -28,6 +31,7 @@ create table public.messages (
     user_id uuid references public.users(id) on delete cascade not null,
     reply_to uuid references public.messages(id) on delete set null,
     reply_count integer default 0,
+    attachments jsonb default null,
     created_at timestamptz default now() not null,
     updated_at timestamptz default now() not null
 );
@@ -177,13 +181,14 @@ returns table (
     created_at timestamptz,
     updated_at timestamptz,
     username text,
-    avatar_url text
+    avatar_url text,
+    attachments jsonb
 )
 language sql
 security definer
-set search_path = public
+stable
 as $$
-    select 
+    select
         m.id,
         m.channel_id,
         m.user_id,
@@ -192,8 +197,9 @@ as $$
         m.reply_count,
         m.created_at,
         m.updated_at,
-        u.username::text,
-        u.avatar_url::text
+        u.username,
+        u.avatar_url,
+        m.attachments
     from messages m
     join users u on u.id = m.user_id
     where exists (
@@ -213,15 +219,18 @@ $$;
 -- Create function to reply to messages
 create or replace function public.create_thread_reply(
     thread_parent_id uuid,
-    content text
+    content text,
+    p_attachments text default null
 )
 returns uuid
 language plpgsql
 security definer
+set search_path = public
 as $$
 declare
     channel_id_var uuid;
     new_message_id uuid;
+    attachments_json jsonb;
 begin
     -- Get channel ID and verify access in one step
     select m.channel_id into channel_id_var
@@ -234,6 +243,18 @@ begin
         raise exception 'Access denied or parent message not found';
     end if;
 
+    -- Convert comma-separated attachments to JSON array of objects
+    if p_attachments is not null then
+        select jsonb_agg(jsonb_build_object(
+            'url', url,
+            'filename', split_part(url, '/', -1)
+        ))
+        from unnest(string_to_array(p_attachments, ',')) as url
+        into attachments_json;
+    else
+        attachments_json = '[]'::jsonb;
+    end if;
+
     -- Insert the reply
     insert into messages (
         channel_id,
@@ -241,6 +262,7 @@ begin
         content,
         reply_to,
         reply_count,
+        attachments,
         created_at,
         updated_at
     ) values (
@@ -249,9 +271,15 @@ begin
         content,
         thread_parent_id,
         0,
+        attachments_json,
         now(),
         now()
     ) returning id into new_message_id;
+
+    -- Update parent message reply count
+    update messages
+    set reply_count = reply_count + 1
+    where id = thread_parent_id;
 
     return new_message_id;
 end;
@@ -259,4 +287,7 @@ $$;
 
 -- Grant execute permissions
 grant execute on function public.get_thread_messages(uuid) to authenticated;
-grant execute on function public.create_thread_reply(uuid, text) to authenticated; 
+grant execute on function public.create_thread_reply(uuid, text, text) to authenticated;
+
+-- Enable RLS
+alter table public.messages enable row level security; 

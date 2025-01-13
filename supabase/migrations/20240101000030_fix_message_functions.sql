@@ -2,8 +2,12 @@
 drop function if exists public.get_thread_messages(uuid);
 drop function if exists public.reply_to_message(uuid, text);
 drop function if exists public.create_thread_reply(uuid, text);
+drop function if exists public.create_thread_reply(uuid, text, text);
 drop trigger if exists update_message_reply_count on public.messages;
 drop function if exists public.update_message_reply_count();
+
+-- Drop the function again to ensure it's removed (since we're changing return type)
+drop function if exists public.get_thread_messages(uuid) cascade;
 
 -- Recreate the get_thread_messages function
 create or replace function public.get_thread_messages(thread_id uuid)
@@ -14,6 +18,7 @@ returns table (
   content text,
   reply_to uuid,
   reply_count integer,
+  attachments jsonb,
   created_at timestamptz,
   updated_at timestamptz,
   username text,
@@ -30,6 +35,7 @@ as $$
     m.content,
     m.reply_to,
     m.reply_count,
+    m.attachments,
     m.created_at,
     m.updated_at,
     u.username::text,
@@ -53,7 +59,8 @@ $$;
 -- Recreate the create_thread_reply function
 create or replace function public.create_thread_reply(
   thread_parent_id uuid,
-  content text
+  content text,
+  p_attachments text default null
 )
 returns uuid
 language plpgsql
@@ -63,6 +70,7 @@ as $$
 declare
   channel_id_var uuid;
   new_message_id uuid;
+  attachments_json jsonb;
 begin
   -- Get channel ID and verify access in one step
   select m.channel_id into channel_id_var
@@ -75,6 +83,16 @@ begin
     raise exception 'Access denied or parent message not found';
   end if;
 
+  -- Convert comma-separated attachments to JSON array of objects
+  if p_attachments is not null then
+    select jsonb_agg(jsonb_build_object(
+      'url', url,
+      'filename', split_part(url, '/', -1)
+    ))
+    from unnest(string_to_array(p_attachments, ',')) as url
+    into attachments_json;
+  end if;
+
   -- Insert the reply
   insert into messages (
     channel_id,
@@ -82,6 +100,7 @@ begin
     content,
     reply_to,
     reply_count,
+    attachments,
     created_at,
     updated_at
   ) values (
@@ -90,6 +109,7 @@ begin
     content,
     thread_parent_id,
     0,
+    attachments_json,
     now(),
     now()
   ) returning id into new_message_id;

@@ -44,6 +44,7 @@ export interface Message {
   id: string;
   user_id: string;
   channel_id: string;
+  workspace_id: string;
   content: string;
   reply_to: string | null;
   reply_count: number;
@@ -58,7 +59,8 @@ export interface Message {
   attachments?: Array<{
     url: string;
     filename: string;
-  }>;
+  }> | null;
+  depth?: number;
 }
 
 export interface MessageReaction {
