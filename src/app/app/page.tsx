@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, Suspense } from 'react'
+import React, { useState, useEffect, useCallback, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { useRouter } from 'next/navigation'
 import Sidebar from '@/components/sidebar'
@@ -97,6 +97,7 @@ function AppContent() {
     setActiveWorkspace(workspace || null)
     setActiveChannel(null)
     setActiveDM(null)
+    setActiveTab('chat')
   }, [workspaces])
 
   const handleCreateWorkspace = useCallback(async (name: string) => {
@@ -286,7 +287,9 @@ function AppContent() {
             {activeTab === 'admin' && (
               <AdminPanel
                 workspaces={workspaces}
+                currentWorkspaceId={activeWorkspace?.id || ''}
                 onDeleteWorkspace={handleDeleteWorkspace}
+                onClose={() => setActiveTab('chat')}
               />
             )}
           </div>

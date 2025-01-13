@@ -88,7 +88,10 @@ export default function Home() {
       case 'admin':
         return (
           <div className="flex-1 p-4">
-            <AdminPanel workspaces={workspaces} />
+            <AdminPanel 
+              workspaces={workspaces} 
+              currentWorkspaceId={activeWorkspace?.id || ''}
+            />
           </div>
         )
       default:

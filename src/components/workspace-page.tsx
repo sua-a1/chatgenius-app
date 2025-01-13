@@ -61,11 +61,12 @@ export default function WorkspacePage({ workspace, workspaces, onOpenProfileSett
 
   // Redirect non-admin users back to chat tab
   useEffect(() => {
-    if (!isAdmin && (activeTab === 'manage' || activeTab === 'admin')) {
+    // Only redirect if we lost admin access
+    if (isAdmin === false && (activeTab === 'manage' || activeTab === 'admin')) {
       setActiveTab('chat')
       onTabChange('chat')
     }
-  }, [isAdmin, activeTab])
+  }, [isAdmin]) // Only watch isAdmin changes
 
   const filteredMembers = useMemo(() => {
     if (!members) return []
