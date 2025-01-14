@@ -19,6 +19,7 @@ import { Input } from '@/components/ui/input'
 import { SearchDialog, type SearchResult } from '@/components/search-dialog'
 import { Search } from 'lucide-react'
 import { CommandInput } from '@/components/ui/command'
+import { toast } from '@/hooks/use-toast'
 
 interface Workspace {
   id: string;
@@ -119,33 +120,59 @@ function AppContent() {
     return success
   }, [deleteWorkspace, activeWorkspace])
 
-  const handleSelectChannel = useCallback((channelId: string) => {
+  const handleSelectChannel = useCallback(async (channelId: string | null) => {
     if (!activeWorkspace) return
     
-    // First try to find the channel in the list
-    const channel = channels.find(c => c.id === channelId)
-    if (channel) {
-      setActiveChannel(channel)
+    if (!channelId) {
+      // Clear selection
+      setActiveChannel(null)
       setActiveDM(null)
+      // Clear URL params
+      const url = new URL(window.location.href)
+      url.searchParams.delete('channel')
+      window.history.replaceState({}, '', url)
+      return
+    }
+    
+    // First try to find the channel in the list
+    let channel = channels.find(c => c.id === channelId)
+    
+    // If not found immediately after creation, wait briefly and try again
+    if (!channel) {
+      console.log('[DEBUG] Channel not found immediately, waiting for update:', channelId)
+      // Wait for next tick to allow channel list to update
+      await new Promise(resolve => setTimeout(resolve, 100))
+      channel = channels.find(c => c.id === channelId)
+    }
+    
+    if (!channel) {
+      console.log('[DEBUG] Channel not found in list:', channelId)
+      // Channel was deleted or not found
+      setActiveChannel(null)
+      setActiveDM(null)
+      // Clear URL params
+      const url = new URL(window.location.href)
+      url.searchParams.delete('channel')
+      window.history.replaceState({}, '', url)
+      // Show toast
+      toast({
+        variant: 'destructive',
+        title: 'Channel not found',
+        description: 'This channel may have been deleted.',
+      })
       return
     }
 
-    // If not found, create a minimal channel object
-    // The full details will be loaded when the channels list updates
-    setActiveChannel({
-      id: channelId,
-      workspace_id: activeWorkspace.id,
-      name: 'Loading...',
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      created_by: profile?.id || '',
-      is_private: false,
-      topic: ''
-    })
+    // Channel exists, set it as active
+    setActiveChannel(channel)
     setActiveDM(null)
-  }, [activeWorkspace, channels, profile?.id])
+    // Update URL params
+    const url = new URL(window.location.href)
+    url.searchParams.set('channel', channelId)
+    window.history.replaceState({}, '', url)
+  }, [activeWorkspace, channels, toast])
 
-  const handleSelectDM = useCallback((userId: string) => {
+  const handleSelectDM = useCallback((userId: string | null) => {
     setActiveDM(userId)
     setActiveChannel(null)
   }, [])
@@ -160,6 +187,14 @@ function AppContent() {
 
   const handleTabChange = useCallback((tab: string) => {
     setActiveTab(tab)
+    // Clear selection when not in chat tab
+    if (tab !== 'chat') {
+      setActiveChannel(null)
+      setActiveDM(null)
+      const url = new URL(window.location.href)
+      url.searchParams.delete('channel')
+      window.history.replaceState({}, '', url)
+    }
   }, [])
 
   const handleSearchResult = useCallback((result: SearchResult) => {

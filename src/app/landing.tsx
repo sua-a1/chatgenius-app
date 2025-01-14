@@ -13,6 +13,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Channel, Workspace } from '@/types'
 import { useWorkspaces } from '@/hooks/use-workspaces'
 import { useChannels } from '@/hooks/use-channels'
+import { useToast } from '@/hooks/use-toast'
 
 export default function Home() {
   const { workspaces, isLoading, createWorkspace } = useWorkspaces()
@@ -22,6 +23,7 @@ export default function Home() {
   const [showProfileSettings, setShowProfileSettings] = useState(false)
   const { channels } = useChannels(activeWorkspace?.id)
   const [activeTab, setActiveTab] = useState('chat')
+  const { toast } = useToast()
 
   // Update active workspace when workspaces load
   useEffect(() => {
@@ -44,16 +46,29 @@ export default function Home() {
     return null
   }, [createWorkspace])
 
-  const handleSelectChannel = (channelId: string) => {
-    if (!activeWorkspace) return
-    const channel = channels.find(c => c.id === channelId)
-    if (channel) {
-      setActiveChannel(channel)
-    setActiveDM(null)
+  const handleSelectChannel = useCallback((channelId: string | null) => {
+    if (!channelId) {
+      setActiveChannel(null);
+      return;
     }
-  }
+    console.log('[DEBUG] Channel selected:', channelId)
+    // Verify channel exists in current list
+    const channel = channels.find(c => c.id === channelId)
+    if (!channel) {
+      console.log('[DEBUG] Selected channel not found, showing error')
+      toast({
+        variant: 'destructive',
+        title: 'Channel not found',
+        description: 'This channel may have been deleted.',
+      })
+      setActiveChannel(null)
+      return
+    }
+    setActiveChannel(channel)
+    setActiveDM(null)
+  }, [channels, toast])
 
-  const handleSelectDM = (userId: string) => {
+  const handleSelectDM = (userId: string | null) => {
     setActiveDM(userId)
     setActiveChannel(null)
   }
@@ -129,15 +144,17 @@ export default function Home() {
         onCreateWorkspace={handleCreateWorkspace}
       />
       <div className="flex flex-1">
-          <WorkspacePage 
-            workspace={activeWorkspace}
-          workspaces={workspaces}
-          onOpenProfileSettings={handleOpenProfileSettings}
-            onSelectChannel={handleSelectChannel}
-            onSelectDM={handleSelectDM}
-          onTabChange={handleTabChange}
-        />
-        {activeWorkspace && renderMainContent()}
+          {activeWorkspace && (
+            <WorkspacePage 
+              workspace={activeWorkspace}
+              workspaces={workspaces}
+              onOpenProfileSettings={handleOpenProfileSettings}
+              onSelectChannel={handleSelectChannel}
+              onSelectDM={handleSelectDM}
+              onTabChange={handleTabChange}
+            />
+          )}
+          {activeWorkspace && renderMainContent()}
       </div>
       {showProfileSettings && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center">

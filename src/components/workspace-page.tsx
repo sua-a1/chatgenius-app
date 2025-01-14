@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useChannels } from '@/hooks/use-channels'
 import { useDirectMessages } from '@/hooks/use-direct-messages'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -23,142 +23,94 @@ import { useWorkspaceMembers } from '@/hooks/use-workspace-members'
 import { Command, CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command'
 import { UserAvatar } from '@/components/ui/user-avatar'
 import { Logo } from '@/components/logo'
-import { useMessages } from '@/hooks/use-messages'
 
 interface WorkspacePageProps {
-  workspace?: Workspace | null
-  workspaces: Workspace[]
+  workspace: {
+    id: string
+    name: string
+  }
+  workspaces: Array<{
+    id: string
+    name: string
+  }>
   onOpenProfileSettings: () => void
-  onSelectChannel: (channelId: string) => void
-  onSelectDM: (userId: string) => void
+  onSelectChannel: (channelId: string | null) => void
+  onSelectDM: (userId: string | null) => void
   onTabChange: (tab: string) => void
 }
 
-export default function WorkspacePage({ workspace, workspaces, onOpenProfileSettings, onSelectChannel, onSelectDM, onTabChange }: WorkspacePageProps) {
+export default function WorkspacePage({ 
+  workspace, 
+  workspaces,
+  onOpenProfileSettings,
+  onSelectChannel,
+  onSelectDM,
+  onTabChange 
+}: WorkspacePageProps) {
   const { profile } = useAuth()
   const { userStatuses } = useUserStatus()
-  const [newChannelName, setNewChannelName] = useState('')
-  const [showNewDM, setShowNewDM] = useState(false)
-  const [newDMEmail, setNewDMEmail] = useState('')
   const [isCollapsed, setIsCollapsed] = useState(false)
-  const [activeTab, setActiveTab] = useState('chat')
-  const { toast } = useToast()
+  const [activeTab, setActiveTab] = useState<string>('chat')
   const { channels, isLoading: isLoadingChannels, createChannel } = useChannels(workspace?.id)
-  const { messages, isLoading: isLoadingMessages } = useMessages(workspace?.id)
   const { recentChats, isLoading: isLoadingDMs, refreshChats } = useDirectMessages(workspace?.id, null)
-  const [displayProfile, setDisplayProfile] = useState(profile)
   const { members, isLoading: isLoadingMembers, isAdmin } = useWorkspaceMembers(workspace?.id || null)
+  const { toast } = useToast()
+  const [newChannelName, setNewChannelName] = useState('')
   const [showMemberSearch, setShowMemberSearch] = useState(false)
   const [memberSearchQuery, setMemberSearchQuery] = useState('')
 
-  // Reset to chat tab when workspace changes
+  // Debug log when channels list changes
   useEffect(() => {
-    if (activeTab !== 'chat') {
-      setActiveTab('chat')
-      onTabChange('chat')
+    console.log('[DEBUG] WorkspacePage: Channels list updated:', channels)
+  }, [channels])
+
+  const handleTabChange = useCallback((tab: string) => {
+    console.log('[DEBUG] Tab changed to:', tab)
+    setActiveTab(tab)
+    onTabChange(tab)
+    // Clear selection when not in chat tab
+    if (tab !== 'chat') {
+      onSelectChannel(null)
     }
-  }, [workspace?.id])
+  }, [onTabChange, onSelectChannel])
 
-  // Redirect non-admin users back to chat tab
-  useEffect(() => {
-    // Only redirect if we lost admin access
-    if (isAdmin === false && (activeTab === 'manage' || activeTab === 'admin')) {
-      setActiveTab('chat')
-      onTabChange('chat')
-    }
-  }, [isAdmin]) // Only watch isAdmin changes
-
-  const filteredMembers = useMemo(() => {
-    if (!members) return []
-    if (!memberSearchQuery.trim()) return members
-    
-    const query = memberSearchQuery.toLowerCase().trim()
-    return members.filter(member => 
-      member.username?.toLowerCase().includes(query) || 
-      member.email?.toLowerCase().includes(query)
-    )
-  }, [members, memberSearchQuery])
-
-  // Update display profile when auth profile changes
-  useEffect(() => {
-    setDisplayProfile(profile)
-  }, [profile])
-
-  // Listen for profile updates
-  useEffect(() => {
-    const handleProfileUpdate = (event: CustomEvent<UserProfile>) => {
-      if (event.detail.id === profile?.id) {
-        console.log('Updating workspace profile display:', event.detail)
-        setDisplayProfile(event.detail)
-      }
-    }
-
-    window.addEventListener('profileUpdated', handleProfileUpdate as EventListener)
-    return () => {
-      window.removeEventListener('profileUpdated', handleProfileUpdate as EventListener)
-    }
-  }, [profile?.id])
-
-  // Debug logs
-  useEffect(() => {
-    console.log('WorkspacePage: State', { 
-      isLoadingDMs, 
-      recentChatsLength: recentChats?.length,
-      workspaceId: workspace?.id,
-      profileId: profile?.id
-    })
-  }, [isLoadingDMs, recentChats, workspace?.id, profile?.id])
-
-  const handleAddChannel = async () => {
-    if (!workspace?.id || !newChannelName.trim()) {
+  const handleChannelSelect = useCallback((channelId: string) => {
+    console.log('[DEBUG] Channel selected:', channelId)
+    // Verify channel exists in current list
+    const channel = channels.find(c => c.id === channelId)
+    if (!channel) {
+      console.log('[DEBUG] Selected channel not found, showing error')
       toast({
         variant: 'destructive',
-        title: 'Channel name required',
-        description: 'Please enter a name for your channel.',
+        title: 'Channel not found',
+        description: 'This channel may have been deleted.',
       })
+      onSelectChannel(null)
       return
     }
+    onSelectChannel(channelId)
+  }, [channels, toast, onSelectChannel])
 
+  const handleAddChannel = useCallback(async () => {
+    if (!newChannelName.trim()) return
+    
     const channel = await createChannel(newChannelName.trim())
     if (channel) {
       setNewChannelName('')
-      // Wait a short moment for the channel list to update
-      setTimeout(() => {
-        onSelectChannel(channel.id)
-        toast({
-          title: 'Channel created',
-          description: `#${channel.name} has been created successfully.`,
-        })
-      }, 500)
+      handleChannelSelect(channel.id)
     }
-  }
+  }, [newChannelName, createChannel, handleChannelSelect])
 
-  const handleAddDM = () => {
+  const handleAddDM = useCallback(() => {
     setShowMemberSearch(true)
-  }
+  }, [])
 
-  const handleSelectMember = async (userId: string) => {
+  const handleSelectMember = useCallback(async (userId: string) => {
     setShowMemberSearch(false)
     await onSelectDM(userId)
     // Refresh the chats list to show the new conversation
     refreshChats()
-  }
-
-  const handleChannelSelect = (channelId: string) => {
-    onSelectChannel(channelId)
-  }
-
-  const handleTabChange = (value: string) => {
-    setActiveTab(value)
-    onTabChange(value)
-  }
-
-  console.log('WorkspacePage: Rendering', { 
-    workspace, 
-    profileId: profile?.id, 
-    isLoadingDMs,
-    recentChatsLength: recentChats.length 
-  })
+  }, [onSelectDM, refreshChats])
 
   return (
     <div className={`grid grid-rows-[auto,1fr,auto] h-full border-r ${isCollapsed ? 'w-16' : 'min-w-[16rem] max-w-xs'} transition-all duration-200 bg-gradient-to-b from-[#4A3B8C]/5 to-[#5D3B9E]/5`}>
@@ -231,17 +183,20 @@ export default function WorkspacePage({ workspace, workspaces, onOpenProfileSett
                       ) : channels.length === 0 ? (
                         <div className="text-sm text-muted-foreground px-2">No channels yet</div>
                       ) : (
-                        channels.map((channel) => (
-                          <Button
-                            key={channel.id}
-                            variant="ghost"
-                            className="w-full justify-start px-2 hover:bg-[#3A2E6E]/10"
-                            onClick={() => handleChannelSelect(channel.id)}
-                          >
-                            <Hash className="mr-2 h-4 w-4 shrink-0" />
-                            <span className="truncate">{channel.name}</span>
-                          </Button>
-                        ))
+                        channels.map((channel) => {
+                          console.log('[DEBUG] Rendering channel:', channel.id, channel.name)
+                          return (
+                            <Button
+                              key={channel.id}
+                              variant="ghost"
+                              className="w-full justify-start px-2 hover:bg-[#3A2E6E]/10"
+                              onClick={() => handleChannelSelect(channel.id)}
+                            >
+                              <Hash className="mr-2 h-4 w-4 shrink-0" />
+                              <span className="truncate">{channel.name}</span>
+                            </Button>
+                          )
+                        })
                       )}
                       <div className="flex items-center gap-2 mt-2 px-2">
                         <Input
@@ -332,7 +287,7 @@ export default function WorkspacePage({ workspace, workspaces, onOpenProfileSett
         <CommandList>
           <CommandEmpty>No members found.</CommandEmpty>
           <CommandGroup>
-            {filteredMembers.map((member) => (
+            {members?.map((member) => (
               <CommandItem
                 key={member.id}
                 onSelect={() => handleSelectMember(member.id)}
