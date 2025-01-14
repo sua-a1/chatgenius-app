@@ -64,98 +64,109 @@ const MODEL = 'text-embedding-ada-002'
 
 async function generateEmbeddings() {
   const spinner = ora('Starting migration...').start()
+  let processedCount = 0;
+  let offset = 0;
   
   try {
     // Test connection first
     await testConnection()
     
-    spinner.text = 'Fetching messages without embeddings...'
+    while (true) {
+      spinner.text = 'Fetching messages...'
 
-    // Get messages without embeddings using a simpler query
-    // First get the message IDs that already have embeddings
-    const { data: existingIds, error: idsError } = await supabase
-      .from('message_embeddings')
-      .select('message_id')
+      // Get messages in batches
+      const { data: messages, error: fetchError } = await supabase
+        .from('messages')
+        .select(`
+          id,
+          content,
+          channel_id,
+          user_id,
+          created_at,
+          channels!inner (
+            workspace_id
+          )
+        `)
+        .order('created_at', { ascending: true })
+        .range(offset, offset + BATCH_SIZE - 1)
 
-    if (idsError) {
-      console.error('Error fetching existing embeddings:', idsError)
-      throw idsError
-    }
-
-    // Get messages without embeddings
-    const { data: messages, error: fetchError } = await supabase
-      .from('messages')
-      .select(`
-        id,
-        content,
-        channel_id,
-        user_id,
-        created_at,
-        channels!inner (
-          workspace_id
-        )
-      `)
-      .not('id', 'in', existingIds?.map(row => row.message_id) || [])
-      .order('created_at', { ascending: true })
-      .limit(BATCH_SIZE)
-
-    if (fetchError) {
-      console.error('Fetch error details:', fetchError)
-      throw new Error(`Failed to fetch messages: ${JSON.stringify(fetchError, null, 2)}`)
-    }
-
-    console.log('Messages found:', messages?.length || 0)
-    if (!messages?.length) {
-      spinner.succeed('No messages to process')
-      return
-    }
-
-    spinner.text = `Processing batch of ${messages.length} messages`
-
-    // Generate embeddings for the batch
-    const embeddings = await Promise.all(
-      messages.map(async (message) => {
-        try {
-          const embeddingResponse = await openai.embeddings.create({
-            model: MODEL,
-            input: message.content,
-          })
-
-          return {
-            message_id: message.id,
-            embedding: embeddingResponse.data[0].embedding,
-            channel_id: message.channel_id,
-            user_id: message.user_id,
-            workspace_id: message.channels.workspace_id,
-            metadata: {
-              content: message.content,
-              created_at: message.created_at,
-              embedding_created_at: new Date().toISOString()
-            }
-          }
-        } catch (error) {
-          console.error(`Error generating embedding for message ${message.id}:`, error)
-          return null
-        }
-      })
-    )
-
-    // Filter out any failed embeddings
-    const validEmbeddings = embeddings.filter(e => e !== null)
-
-    // Insert embeddings
-    if (validEmbeddings.length > 0) {
-      spinner.text = `Inserting ${validEmbeddings.length} embeddings...`
-      const { error: insertError } = await supabase
-        .from('message_embeddings')
-        .insert(validEmbeddings)
-
-      if (insertError) {
-        throw new Error(`Failed to insert embeddings: ${JSON.stringify(insertError, null, 2)}`)
+      if (fetchError) {
+        console.error('Fetch error details:', fetchError)
+        throw new Error(`Failed to fetch messages: ${JSON.stringify(fetchError, null, 2)}`)
       }
-    }
 
-    spinner.succeed(`Successfully processed ${validEmbeddings.length} messages`)
+      console.log('Messages found:', messages?.length || 0)
+      if (!messages?.length) {
+        spinner.succeed(`Finished processing all messages. Total processed: ${processedCount}`)
+        return
+      }
+
+      // Check which messages already have embeddings
+      const { data: existingEmbeddings } = await supabase
+        .from('message_embeddings')
+        .select('message_id')
+        .in('message_id', messages.map(m => m.id))
+
+      const existingMessageIds = new Set((existingEmbeddings || []).map(e => e.message_id))
+      const messagesToProcess = messages.filter(m => !existingMessageIds.has(m.id))
+
+      if (messagesToProcess.length > 0) {
+        spinner.text = `Processing batch of ${messagesToProcess.length} messages (Total processed: ${processedCount})`
+
+        // Generate embeddings for the batch
+        const embeddings = await Promise.all(
+          messagesToProcess.map(async (message) => {
+            try {
+              const embeddingResponse = await openai.embeddings.create({
+                model: MODEL,
+                input: message.content,
+              })
+
+              return {
+                message_id: message.id,
+                embedding: embeddingResponse.data[0].embedding,
+                channel_id: message.channel_id,
+                user_id: message.user_id,
+                workspace_id: message.channels.workspace_id,
+                metadata: {
+                  content: message.content,
+                  created_at: message.created_at,
+                  embedding_created_at: new Date().toISOString(),
+                  user_id: message.user_id,
+                  channel_id: message.channel_id,
+                  workspace_id: message.channels.workspace_id
+                }
+              }
+            } catch (error) {
+              console.error(`Error generating embedding for message ${message.id}:`, error)
+              return null
+            }
+          })
+        )
+
+        // Filter out any failed embeddings
+        const validEmbeddings = embeddings.filter(e => e !== null)
+
+        // Insert embeddings
+        if (validEmbeddings.length > 0) {
+          spinner.text = `Inserting ${validEmbeddings.length} embeddings...`
+          const { error: insertError } = await supabase
+            .from('message_embeddings')
+            .insert(validEmbeddings)
+
+          if (insertError) {
+            throw new Error(`Failed to insert embeddings: ${JSON.stringify(insertError, null, 2)}`)
+          }
+          processedCount += validEmbeddings.length
+        }
+      }
+
+      // Move to next batch
+      offset += BATCH_SIZE
+
+      // Add a small delay to avoid rate limiting
+      await new Promise(resolve => setTimeout(resolve, 1000))
+    }
   } catch (error) {
     spinner.fail('Migration failed')
     if (error instanceof Error) {

@@ -1,0 +1,2 @@
+# Config for semantic-search function
+verify_jwt = false 

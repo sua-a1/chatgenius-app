@@ -5,7 +5,6 @@ drop function if exists get_relevant_context;
 create or replace function get_relevant_context(
     query_embedding vector(1536),  -- Pass pre-computed embedding instead
     p_workspace_id uuid,
-    p_user_id uuid,
     similarity_threshold float default 0.8,
     max_results int default 5
 ) returns table (
@@ -29,16 +28,6 @@ begin
         message_embeddings me
     where
         me.workspace_id = p_workspace_id
-        and (
-            -- Messages from the same user
-            me.user_id = p_user_id
-            -- Or messages in shared workspaces
-            or me.workspace_id in (
-                select workspace_id 
-                from workspace_members 
-                where user_id = p_user_id
-            )
-        )
         and (me.embedding <=> query_embedding) <= similarity_threshold
     order by
         me.embedding <=> query_embedding

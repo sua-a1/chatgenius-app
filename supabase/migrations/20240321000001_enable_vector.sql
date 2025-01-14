@@ -27,16 +27,19 @@ create index if not exists message_embeddings_workspace_id_idx on message_embedd
 create index if not exists message_embeddings_channel_id_idx on message_embeddings(channel_id);
 create index if not exists message_embeddings_user_id_idx on message_embeddings(user_id);
 
+-- Drop existing function first
+drop function if exists get_relevant_context(vector, uuid, uuid, float, int);
+
 -- Function to get relevant context based on similarity search
 create or replace function get_relevant_context(
   query_embedding vector(1536),
   workspace_id_filter uuid,
-  user_id_filter uuid,
   similarity_threshold float default 0.8,
   max_results int default 5
 ) returns table (
   message_id uuid,
   content text,
+  metadata jsonb,
   similarity float
 )
 language plpgsql
@@ -46,11 +49,16 @@ begin
   select
     m.id as message_id,
     m.content,
+    jsonb_build_object(
+      'workspace_id', me.workspace_id,
+      'channel_id', me.channel_id,
+      'user_id', me.user_id,
+      'created_at', m.created_at
+    ) as metadata,
     1 - (me.embedding <=> query_embedding) as similarity
   from message_embeddings me
   join messages m on m.id = me.message_id
   where me.workspace_id = workspace_id_filter
-    and me.user_id = user_id_filter
     and 1 - (me.embedding <=> query_embedding) > similarity_threshold
   order by me.embedding <=> query_embedding
   limit max_results;
@@ -60,15 +68,20 @@ $$;
 -- Set up RLS policies
 alter table public.message_embeddings enable row level security;
 
--- Read policy: users can only read embeddings from workspaces they are members of
+-- Drop existing policies first
+drop policy if exists "Users can read embeddings from their workspaces" on public.message_embeddings;
+drop policy if exists "System can manage embeddings" on public.message_embeddings;
+
+-- Read policy: users can read embeddings from workspaces they are members of
 create policy "Users can read embeddings from their workspaces"
     on public.message_embeddings
     for select
     using (
-        workspace_id in (
-            select workspace_id 
-            from public.workspace_members 
-            where user_id = auth.uid()
+        exists (
+            select 1 
+            from workspace_memberships wm
+            where wm.workspace_id = message_embeddings.workspace_id
+            and wm.user_id = auth.uid()
         )
     );
 

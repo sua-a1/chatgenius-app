@@ -24,7 +24,7 @@ export async function middleware(req: NextRequest) {
   
   if (!session && !isPublicRoute) {
     // Redirect unauthenticated users to login page
-    const redirectUrl = new URL('/auth/signin', req.url)
+    const redirectUrl = new URL('/auth/sign-in', req.url)
     console.log('Redirecting to:', redirectUrl.toString())
     return NextResponse.redirect(redirectUrl)
   }

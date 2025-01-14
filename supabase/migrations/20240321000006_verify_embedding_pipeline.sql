@@ -42,7 +42,6 @@ with zero_vector as (
 select * from get_relevant_context(
     (select v from zero_vector),  -- Zero vector with correct dimensions
     (select workspace_id from workspace_members limit 1),
-    (select user_id from workspace_members limit 1),
     0.8,
     5
 ); 

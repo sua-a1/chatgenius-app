@@ -66,46 +66,73 @@
   - [x] Automatic embedding generation
   - [x] Error handling and retry logic
 
-## 5. API Implementation
-- [ ] Add new Next.js API routes:
-  - [ ] `POST /api/ai/ask`
-  - [ ] `GET /api/ai/history`
-- [ ] Implement middleware:
-  - [ ] Supabase auth check
-  - [ ] Workspace access validation
-  - [ ] Rate limiting
-
-## 6. Query Processing
-- [ ] Implement vector search:
-  ```typescript
-  - [ ] Query construction with pgvector
-  - [ ] Workspace-specific filtering
-  - [ ] Channel context inclusion
+## 5. AI Chat Assistant Implementation
+- [x] Create new database tables:
+  ```sql
+  - ai_assistant_conversations (
+    id uuid primary key,
+    workspace_id uuid references workspaces(id),
+    user_id uuid references auth.users(id),
+    created_at timestamptz default now()
+  )
+  - ai_assistant_messages (
+    id uuid primary key,
+    conversation_id uuid references ai_assistant_conversations(id),
+    role text check (role in ('user', 'assistant')),
+    content text,
+    created_at timestamptz default now()
+  )
   ```
-- [ ] Create prompt template:
-  - [ ] Include workspace/channel context
-  - [ ] Format retrieved messages
-  - [ ] Handle conversation history
+- [x] Set up RLS policies:
+  - [x] Read/write access based on workspace membership
+  - [x] Conversation history visibility rules
 
-## 7. UI Components
-- [ ] Add to existing components:
-  - [ ] `MessageComposer`: Add AI assist button
-  - [ ] `ChannelMessageArea`: AI response display
-  - [ ] `SearchDialog`: Semantic search integration
-- [ ] Create new components:
-  - [ ] `AIResponseBubble`
-  - [ ] `AITypingIndicator`
+## 6. Query & Response Pipeline
+- [x ] Implement semantic search:
+  ```typescript
+  - [x] Create similarity search function using pgvector
+  - [x] Filter by workspace context
+  - [x] Sort and rank results by relevance
+  - [x] Implement sliding window for conversation history
+  ```
+- [x] Design prompt engineering:
+  - [x] Create base system prompt template
+  - [x] Format retrieved context snippets
+  - [x] Include conversation history
+  - [x] Handle workspace-specific context
+- [x] Implement response generation:
+  - [x] OpenAI chat completion integration
+  - [x] Error handling and retry logic
+  - [x] Response streaming support
+  - [x] Rate limiting and token management
+
+## 7. API & Backend Routes
+- [x] Create new API endpoints:
+  - [x] `POST /api/ai/chat/start` - Start new conversation
+  - [x] `POST /api/ai/chat/message` - Send message and get response
+  - [x] `GET /api/ai/chat/history` - Get conversation history
+  - [x] `DELETE /api/ai/chat/:id` - End/delete conversation
+- [x] Implement middleware:
+  - [x] Authentication check
+  - [x] Workspace context validation
+  - [x] Rate limiting per user/workspace
+  - [x] Error handling
 
 ## 8. Frontend Integration
-- [ ] Create hooks:
-  ```typescript
-  - [ ] useAIAssistant
-  - [ ] useVectorSearch
-  ```
+- [ ] Create new components:
+  - [ ] `AIChatWindow` - Main chat interface
+  - [ ] `AIMessageBubble` - Message display
+  - [ ] `AITypingIndicator` - Loading state
+  - [ ] `AIConversationList` - History view
 - [ ] Add state management:
+  - [ ] Conversation tracking
+  - [ ] Message history
   - [ ] Loading states
   - [ ] Error handling
-  - [ ] Response caching
+- [ ] Implement real-time updates:
+  - [ ] Message streaming
+  - [ ] Typing indicators
+  - [ ] Error states
 
 ## 9. Testing
 - [ ] Unit tests:

@@ -7,7 +7,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
-import { PlusCircle, Settings, Hash, MessageSquare, UserPlus, X, ChevronLeft, ChevronRight, Users, Shield } from 'lucide-react'
+import { PlusCircle, Settings, Hash, MessageSquare, UserPlus, X, ChevronLeft, ChevronRight, Users, Shield, Bot } from 'lucide-react'
 import { useAuth } from '@/contexts/auth-context'
 import { useUserStatus } from '@/contexts/user-status-context'
 import { SignOutButton } from './sign-out-button'
@@ -23,6 +23,7 @@ import { useWorkspaceMembers } from '@/hooks/use-workspace-members'
 import { Command, CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command'
 import { UserAvatar } from '@/components/ui/user-avatar'
 import { Logo } from '@/components/logo'
+import { AIChatWindow } from './ai/chat-window'
 
 interface WorkspacePageProps {
   workspace?: Workspace | null
@@ -31,9 +32,10 @@ interface WorkspacePageProps {
   onSelectChannel: (channelId: string) => void
   onSelectDM: (userId: string) => void
   onTabChange: (tab: string) => void
+  children?: React.ReactNode
 }
 
-export default function WorkspacePage({ workspace, workspaces, onOpenProfileSettings, onSelectChannel, onSelectDM, onTabChange }: WorkspacePageProps) {
+export default function WorkspacePage({ workspace, workspaces, onOpenProfileSettings, onSelectChannel, onSelectDM, onTabChange, children }: WorkspacePageProps) {
   const { profile } = useAuth()
   const { userStatuses } = useUserStatus()
   const [newChannelName, setNewChannelName] = useState('')
@@ -48,6 +50,7 @@ export default function WorkspacePage({ workspace, workspaces, onOpenProfileSett
   const { members, isLoading: isLoadingMembers } = useWorkspaceMembers(workspace?.id || null)
   const [showMemberSearch, setShowMemberSearch] = useState(false)
   const [memberSearchQuery, setMemberSearchQuery] = useState('')
+  const [showAIChat, setShowAIChat] = useState(false)
 
   const filteredMembers = useMemo(() => {
     if (!members) return []
@@ -135,54 +138,54 @@ export default function WorkspacePage({ workspace, workspaces, onOpenProfileSett
   })
 
   return (
-    <div className={`grid grid-rows-[auto,1fr,auto] h-full border-r ${isCollapsed ? 'w-16' : 'min-w-[16rem] max-w-xs'} transition-all duration-200`}>
-      <div className="border-b">
-        <div className="flex h-16 items-center px-2 justify-between">
-          {!isCollapsed ? (
-            <div className="flex items-center gap-2 px-2">
-              {workspace && <h1 className="text-xl font-semibold truncate">{workspace.name}</h1>}
-            </div>
-          ) : (
-            <div className="w-full flex justify-center">
-              <span className="text-xl font-semibold">{workspace?.name[0]}</span>
-            </div>
-          )}
-          <Button variant="ghost" size="icon" onClick={() => setIsCollapsed(!isCollapsed)}>
-            {isCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
-          </Button>
-        </div>
-      </div>
-
-      {!isCollapsed && workspace && (
-        <Tabs value={activeTab} onValueChange={handleTabChange} className="flex-1 flex flex-col overflow-hidden">
-          <div className="px-2 pt-2">
-            <TabsList className="w-full bg-[#3A2E6E]/10">
-              <TabsTrigger 
-                value="chat" 
-                className="flex-1 data-[state=active]:bg-[#3A2E6E] data-[state=active]:text-white"
-              >
-                <MessageSquare className="h-4 w-4 mr-2" />
-                Chat
-              </TabsTrigger>
-              <TabsTrigger 
-                value="manage" 
-                className="flex-1 data-[state=active]:bg-[#3A2E6E] data-[state=active]:text-white"
-              >
-                <Users className="h-4 w-4 mr-2" />
-                Manage
-              </TabsTrigger>
-              <TabsTrigger 
-                value="admin" 
-                className="flex-1 data-[state=active]:bg-[#3A2E6E] data-[state=active]:text-white"
-              >
-                <Shield className="h-4 w-4 mr-2" />
-                Admin
-              </TabsTrigger>
-            </TabsList>
+    <div className="flex h-full">
+      <div className={`grid grid-rows-[auto,1fr,auto] h-full border-r ${isCollapsed ? 'w-16' : 'min-w-[16rem] max-w-xs'} transition-all duration-200`}>
+        <div className="border-b">
+          <div className="flex h-16 items-center px-2 justify-between">
+            {!isCollapsed ? (
+              <div className="flex items-center gap-2 px-2">
+                {workspace && <h1 className="text-xl font-semibold truncate">{workspace.name}</h1>}
+              </div>
+            ) : (
+              <div className="w-full flex justify-center">
+                <span className="text-xl font-semibold">{workspace?.name[0]}</span>
+              </div>
+            )}
+            <Button variant="ghost" size="icon" onClick={() => setIsCollapsed(!isCollapsed)}>
+              {isCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
+            </Button>
           </div>
+        </div>
 
-          {activeTab === 'chat' && (
-            <div className="flex-1 overflow-hidden flex flex-col">
+        {!isCollapsed && workspace && (
+          <Tabs value={activeTab} onValueChange={handleTabChange} className="flex-1 flex flex-col overflow-hidden">
+            <div className="px-2 pt-2">
+              <TabsList className="w-full bg-[#3A2E6E]/10">
+                <TabsTrigger 
+                  value="chat" 
+                  className="flex-1 data-[state=active]:bg-[#3A2E6E] data-[state=active]:text-white"
+                >
+                  <MessageSquare className="h-4 w-4 mr-2" />
+                  Chat
+                </TabsTrigger>
+                <TabsTrigger 
+                  value="manage" 
+                  className="flex-1 data-[state=active]:bg-[#3A2E6E] data-[state=active]:text-white"
+                >
+                  <Users className="h-4 w-4 mr-2" />
+                  Manage
+                </TabsTrigger>
+                <TabsTrigger 
+                  value="admin" 
+                  className="flex-1 data-[state=active]:bg-[#3A2E6E] data-[state=active]:text-white"
+                >
+                  <Shield className="h-4 w-4 mr-2" />
+                  Admin
+                </TabsTrigger>
+              </TabsList>
+            </div>
+
+            <TabsContent value="chat" className="flex-1 overflow-hidden flex flex-col m-0">
               <ScrollArea className="flex-1">
                 <div className="px-2 py-4 space-y-4">
                   {/* Channels Section */}
@@ -276,42 +279,81 @@ export default function WorkspacePage({ workspace, workspaces, onOpenProfileSett
                   </div>
                 </div>
               </ScrollArea>
-            </div>
-          )}
-        </Tabs>
-      )}
+            </TabsContent>
 
-      <div className="border-t p-2">
-        <UserMenu onOpenProfileSettings={onOpenProfileSettings} isCollapsed={isCollapsed} />
+            <TabsContent value="manage" className="flex-1 overflow-hidden m-0">
+              {/* ... existing manage content ... */}
+            </TabsContent>
+
+            <TabsContent value="admin" className="flex-1 overflow-hidden m-0">
+              {/* ... existing admin content ... */}
+            </TabsContent>
+          </Tabs>
+        )}
+
+        <div className="border-t p-2">
+          <UserMenu onOpenProfileSettings={onOpenProfileSettings} isCollapsed={isCollapsed} />
+        </div>
+
+        {/* Member Search Dialog */}
+        <CommandDialog open={showMemberSearch} onOpenChange={setShowMemberSearch}>
+          <CommandInput 
+            placeholder="Search members..." 
+            value={memberSearchQuery}
+            onValueChange={setMemberSearchQuery}
+          />
+          <CommandList>
+            <CommandEmpty>No members found.</CommandEmpty>
+            <CommandGroup>
+              {filteredMembers.map((member) => (
+                <CommandItem
+                  key={member.id}
+                  onSelect={() => handleSelectMember(member.id)}
+                  className="flex items-center gap-2 cursor-pointer hover:bg-[#4A3B8C]/10"
+                >
+                  <UserAvatar
+                    user={member}
+                    className="h-6 w-6"
+                  />
+                  <span>{member.username}</span>
+                  <span className="text-sm text-muted-foreground">{member.email}</span>
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </CommandList>
+        </CommandDialog>
       </div>
 
-      {/* Member Search Dialog */}
-      <CommandDialog open={showMemberSearch} onOpenChange={setShowMemberSearch}>
-        <CommandInput 
-          placeholder="Search members..." 
-          value={memberSearchQuery}
-          onValueChange={setMemberSearchQuery}
-        />
-        <CommandList>
-          <CommandEmpty>No members found.</CommandEmpty>
-          <CommandGroup>
-            {filteredMembers.map((member) => (
-              <CommandItem
-                key={member.id}
-                onSelect={() => handleSelectMember(member.id)}
-                className="flex items-center gap-2 cursor-pointer hover:bg-[#4A3B8C]/10"
-              >
-                <UserAvatar
-                  user={member}
-                  className="h-6 w-6"
-                />
-                <span>{member.username}</span>
-                <span className="text-sm text-muted-foreground">{member.email}</span>
-              </CommandItem>
-            ))}
-          </CommandGroup>
-        </CommandList>
-      </CommandDialog>
+      <div className="flex-1 relative">
+        {children}
+        
+        {/* Floating AI Chat Button */}
+        <Button
+          onClick={() => setShowAIChat(!showAIChat)}
+          className="fixed bottom-6 right-6 bg-[#3A2E6E] hover:bg-[#2A2154] text-white rounded-full p-3 shadow-lg z-20"
+        >
+          <Bot className="h-6 w-6" />
+        </Button>
+
+        {/* AI Chat Window */}
+        {showAIChat && workspace && (
+          <div className="fixed inset-0 z-10 bg-background/80 backdrop-blur-sm">
+            <div className="fixed inset-4 bg-background border rounded-lg shadow-lg overflow-hidden">
+              <div className="flex flex-col h-full">
+                <div className="flex items-center justify-between p-4 border-b">
+                  <h2 className="text-lg font-semibold">AI Assistant</h2>
+                  <Button variant="ghost" size="icon" onClick={() => setShowAIChat(false)}>
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+                <div className="flex-1 overflow-hidden">
+                  <AIChatWindow workspaceId={workspace.id} />
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   )
 }

@@ -2,12 +2,14 @@ import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs'
 import { cookies } from 'next/headers'
 import { NextResponse } from 'next/server'
 
+export const dynamic = 'force-dynamic'
+
 export async function GET(request: Request) {
   const requestUrl = new URL(request.url)
   const code = requestUrl.searchParams.get('code')
 
   if (!code) {
-    return NextResponse.redirect(`${requestUrl.origin}/auth/signin?error=No code provided`)
+    return NextResponse.redirect(`${requestUrl.origin}/auth/sign-in?error=No code provided`)
   }
 
   try {
@@ -82,7 +84,7 @@ export async function GET(request: Request) {
   } catch (error: any) {
     console.error('Auth callback error:', error)
     return NextResponse.redirect(
-      `${requestUrl.origin}/auth/signin?error=${encodeURIComponent(error.message || 'An unexpected error occurred')}`
+      `${requestUrl.origin}/auth/sign-in?error=${encodeURIComponent(error.message || 'An unexpected error occurred')}`
     )
   }
 } 

@@ -1,0 +1,2 @@
+# Config for chat-completion function
+verify_jwt = false 
