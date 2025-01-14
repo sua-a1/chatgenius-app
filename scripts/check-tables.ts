@@ -1,5 +1,7 @@
-const { createClient } = require('@supabase/supabase-js')
-require('dotenv').config()
+import { createClient } from '@supabase/supabase-js'
+import dotenv from 'dotenv'
+
+dotenv.config()
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
 const supabaseServiceKey = process.env.NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY
@@ -11,17 +13,16 @@ if (!supabaseUrl || !supabaseServiceKey) {
 const supabase = createClient(supabaseUrl, supabaseServiceKey)
 
 async function checkTables() {
-  // Get a sample message to see its structure
-  const { data: message, error: messageError } = await supabase
-    .from('messages')
-    .select('*')
-    .limit(1)
-    .single()
+  // List all tables
+  const { data: tables, error: tablesError } = await supabase
+    .from('information_schema.tables')
+    .select('table_name')
+    .eq('table_schema', 'public')
 
-  if (messageError) {
-    console.error('Error fetching message:', messageError)
+  if (tablesError) {
+    console.error('Error fetching tables:', tablesError)
   } else {
-    console.log('Message structure:', message)
+    console.log('Tables:', tables.map(t => t.table_name))
   }
 }
 

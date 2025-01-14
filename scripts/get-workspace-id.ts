@@ -1,5 +1,7 @@
-const { createClient } = require('@supabase/supabase-js')
-require('dotenv').config()
+import { createClient } from '@supabase/supabase-js'
+import dotenv from 'dotenv'
+
+dotenv.config()
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
 const supabaseServiceKey = process.env.NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY
@@ -11,17 +13,19 @@ if (!supabaseUrl || !supabaseServiceKey) {
 const supabase = createClient(supabaseUrl, supabaseServiceKey)
 
 async function getWorkspaceId() {
-  const { data, error } = await supabase
+  const { data: workspaces, error } = await supabase
     .from('workspaces')
     .select('id, name')
     .limit(1)
+    .single()
 
   if (error) {
     console.error('Error fetching workspace:', error)
-    return
+    process.exit(1)
   }
 
-  console.log('Available workspace:', data?.[0])
+  console.log('Workspace ID:', workspaces.id)
+  return workspaces.id
 }
 
 getWorkspaceId().catch(console.error) 
