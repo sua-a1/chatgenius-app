@@ -197,7 +197,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // Add timeout to the session check
         const sessionPromise = supabase.auth.getSession()
         const timeoutPromise = new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('Auth initialization timed out')), 3000)
+          setTimeout(() => reject(new Error('Auth initialization timed out')), 10000)
         )
 
         const { data: { session }, error } = await Promise.race([
@@ -239,29 +239,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             ].includes(window.location.pathname)
 
             if (!isPublicPage) {
-              // Add timeout to profile fetch
-              const profilePromise = refreshProfile()
-              const profileTimeoutPromise = new Promise<null>((_, reject) => 
-                setTimeout(() => reject(new Error('Profile fetch timed out')), 3000)
-              )
+              try {
+                // Add timeout to profile fetch
+                const profilePromise = refreshProfile()
+                const profileTimeoutPromise = new Promise<null>((_, reject) => 
+                  setTimeout(() => reject(new Error('Profile fetch timed out')), 10000)
+                )
 
-              const profileResult = await Promise.race([
-                profilePromise,
-                profileTimeoutPromise
-              ]).catch(error => {
-                console.error('Profile fetch failed:', error)
-                return null
-              })
-              
-              // If profile fetch fails, log but don't block initialization
-              if (!profileResult && mounted && !isSigningOut) {
-                console.log('Profile fetch failed, treating as partial initialization')
+                const profileResult = await Promise.race([
+                  profilePromise,
+                  profileTimeoutPromise
+                ]).catch(error => {
+                  console.error('Profile fetch error:', error)
+                  return null
+                })
+
+                if (mounted && profileResult) {
+                  setProfile(profileResult)
+                }
+              } catch (error) {
+                console.error('Error fetching profile:', error)
+                // Don't fail initialization on profile error
               }
             }
           }
         }
       } catch (error) {
-        // Treat any error as not signed in
         console.error('Auth initialization error:', error)
         if (mounted) {
           setUser(null)
