@@ -1,0 +1,2 @@
+[global]
+jwt_verification = true 

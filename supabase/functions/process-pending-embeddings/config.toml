@@ -1,0 +1,5 @@
+[global]
+jwt_verification = false
+
+[trigger.cron]
+schedule = "*/5 * * * *"  # Run every 5 minutes 
