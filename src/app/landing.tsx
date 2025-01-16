@@ -66,14 +66,14 @@ export default function Home() {
     setShowProfileSettings(false)
   }
 
-  const handleTabChange = (tab: string) => {
+  const handleTabChange = useCallback((tab: string) => {
     setActiveTab(tab)
     // Reset active states when switching tabs
     if (tab !== 'chat') {
       setActiveChannel(null)
       setActiveDM(null)
     }
-  }
+  }, [])
 
   const renderMainContent = () => {
     if (!activeWorkspace) return null
@@ -88,7 +88,10 @@ export default function Home() {
       case 'admin':
         return (
           <div className="flex-1 p-4">
-            <AdminPanel workspaces={workspaces} />
+            <AdminPanel 
+              workspace={activeWorkspace} 
+              onTabChange={handleTabChange} 
+            />
           </div>
         )
       default:

@@ -1,7 +1,8 @@
-// @ts-ignore: Deno deployment
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import OpenAI from 'https://esm.sh/openai@4'
+import { serve, createClient, OpenAI, User, UserMapEntry } from './deps.ts';
+import { analyzeQuery } from './message-analyzer.ts';
+import { assembleContext } from './context-assembly.ts';
+import { composeInstructions } from './instruction-sets.ts';
+import { MessageContext } from './types.ts';
 
 interface ChatMessage {
   role: 'system' | 'user' | 'assistant';
@@ -12,24 +13,8 @@ interface ChatRequest {
   conversation_id: string;
   message: string;
   workspace_id: string;
-  channel_id?: string;  // Optional channel context
-  user_id?: string;     // Optional user context
-}
-
-interface RelevantContext {
-  content: string;
-  created_at: string;
-  channel_id: string;
+  channel_id?: string;
   user_id?: string;
-  channel_name?: string;
-  username?: string;
-  user_full_name?: string;
-}
-
-interface User {
-  id: string;
-  username: string;
-  full_name: string;
 }
 
 // Initialize OpenAI
@@ -43,7 +28,7 @@ const supabaseClient = createClient(
   Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 );
 
-function formatContextMessages(relevantMessages: RelevantContext[]): string {
+function formatContextMessages(relevantMessages: MessageContext[]): string {
   // Sort messages by timestamp
   const sortedMessages = [...relevantMessages].sort((a, b) => 
     new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
@@ -55,7 +40,7 @@ function formatContextMessages(relevantMessages: RelevantContext[]): string {
     if (!acc[date]) acc[date] = [];
     acc[date].push(msg);
     return acc;
-  }, {} as Record<string, RelevantContext[]>);
+  }, {} as Record<string, MessageContext[]>);
 
   // Format messages by day
   return Object.entries(messagesByDay).map(([date, messages]) => {
@@ -82,7 +67,7 @@ function createSystemPrompt(workspaceContext: string, relevantContext: string, c
     contextualFocus += `\nYou are currently focusing on messages from user @${username}.`;
   }
 
-  return `You are an AI assistant for a workspace chat application. Your role is to help users by providing accurate, helpful responses based on the context of their workspace.${contextualFocus}
+  return `You are a friendly AI assistant for a workspace chat application. Your role is to help users by providing accurate, helpful responses based on the context of their workspace.${contextualFocus}
 
 WORKSPACE CONTEXT:
 ${workspaceContext}
@@ -104,14 +89,13 @@ Format 2 (for paraphrasing):
 Example: "@holame in #Main 1 at 5:30 PM mentioned she was 'at baggage claim'"
 
 2. NEVER deviate from these formats when referencing messages
-3. NEVER list multiple messages without using these formats for each one
-4. NEVER summarize multiple messages without using these formats for each message referenced
-5. If you need to reference multiple messages, format EACH ONE separately using one of the above formats
+3. NEVER summarize multiple messages without using these formats for each message referenced
+4. If you need to reference multiple messages, format EACH ONE separately using one of the above formats
 
 Remember: These formatting rules are MANDATORY for EVERY single message reference in your responses.`;
 }
 
-async function enrichContextWithMetadata(messages: any[], workspace_id: string): Promise<RelevantContext[]> {
+async function enrichContextWithMetadata(messages: any[], workspace_id: string): Promise<MessageContext[]> {
   try {
     console.log('Enriching context with metadata for messages:', messages);
     
@@ -148,10 +132,10 @@ async function enrichContextWithMetadata(messages: any[], workspace_id: string):
     }
     console.log('Fetched users:', users);
 
-    const userMap = new Map((users || []).map((u: User) => [u.id, {
-      username: u.username,
-      full_name: u.full_name
-    }]));
+    const userMap = new Map((users || []).map(u => [u.id, {
+      username: u.username || undefined,
+      full_name: u.full_name || undefined
+    }])) as Map<string, UserMapEntry>;
 
     // Enrich messages with channel names and usernames
     return messages.map(msg => ({
@@ -160,9 +144,9 @@ async function enrichContextWithMetadata(messages: any[], workspace_id: string):
       channel_id: msg.metadata?.channel_id,
       user_id: msg.metadata?.user_id,
       channel_name: msg.metadata?.channel_id ? channelMap.get(msg.metadata.channel_id) : undefined,
-      username: msg.metadata?.user_id ? userMap.get(msg.metadata.user_id)?.username : undefined,
-      user_full_name: msg.metadata?.user_id ? userMap.get(msg.metadata.user_id)?.full_name : undefined
-    })) as RelevantContext[];
+      username: msg.metadata?.user_id ? (userMap.get(msg.metadata.user_id) as UserMapEntry)?.username : undefined,
+      user_full_name: msg.metadata?.user_id ? (userMap.get(msg.metadata.user_id) as UserMapEntry)?.full_name : undefined
+    })) as MessageContext[];
   } catch (error) {
     console.error('Error in enrichContextWithMetadata:', error);
     throw error;
@@ -186,22 +170,14 @@ async function getMessageCount(channelId: string): Promise<number> {
 serve(async (req) => {
   try {
     console.log('Starting chat completion request...');
-    const { conversation_id, message, workspace_id, channel_id, user_id, context } = await req.json();
+    const { conversation_id, message, workspace_id, channel_id, user_id } = await req.json() as ChatRequest;
     console.log('Request params:', { conversation_id, message, workspace_id, channel_id, user_id });
 
-    // Check if this is a message count query
-    const isCountQuery = message.toLowerCase().includes('how many messages') || 
-                        message.toLowerCase().includes('number of messages') ||
-                        message.toLowerCase().includes('message count') ||
-                        message.toLowerCase().includes('count of messages');
+    // 1. Analyze the query
+    const queryAnalysis = analyzeQuery(message);
+    console.log('Query analysis:', queryAnalysis);
 
-    let additionalContext = '';
-    if (isCountQuery && channel_id) {
-      const count = await getMessageCount(channel_id);
-      additionalContext = `\nThere are exactly ${count} messages in this channel.`;
-    }
-
-    // 1. Get conversation history
+    // 2. Get conversation history
     console.log('Fetching conversation history...');
     const { data: conversationHistory, error: historyError } = await supabaseClient
       .from('ai_assistant_messages')
@@ -214,7 +190,7 @@ serve(async (req) => {
       throw historyError;
     }
 
-    // 2. Get workspace info
+    // 3. Get workspace info
     console.log('Fetching workspace info...');
     const { data: workspace, error: workspaceError } = await supabaseClient
       .from('workspaces')
@@ -227,105 +203,107 @@ serve(async (req) => {
       throw workspaceError;
     }
 
-    // 3. Get specific channel or user info if provided
-    let channelName, username;
-    if (channel_id) {
-      console.log('Fetching channel info...');
-      const { data: channel, error: channelError } = await supabaseClient
-        .from('channels')
-        .select('name')
-        .eq('id', channel_id)
-        .single();
-      
-      if (channelError) {
-        console.error('Error fetching channel:', channelError);
-        throw channelError;
-      }
-      channelName = channel?.name;
-    }
-    if (user_id) {
-      console.log('Fetching user info...');
-      const { data: user, error: userError } = await supabaseClient
-        .from('users')
-        .select('username')
-        .eq('id', user_id)
-        .single();
-      
-      if (userError) {
-        console.error('Error fetching user:', userError);
-        throw userError;
-      }
-      username = user?.username;
-    }
-
-    // 4. Construct the messages array for OpenAI
-    const formattedContext = formatContextMessages(context || []);
+    // 4. Get relevant messages based on query analysis
+    let relevantMessages: MessageContext[] = [];
     
-    const systemPrompt = createSystemPrompt(
-      `Workspace: ${workspace.name}${additionalContext}`,
-      formattedContext,
-      channelName,
-      username
+    // First, get the embedding for the query
+    const embeddingResponse = await openai.embeddings.create({
+      model: "text-embedding-ada-002",
+      input: message,
+    });
+    
+    const queryEmbedding = embeddingResponse.data[0].embedding;
+    
+    // Prepare filter for search
+    const searchFilter = {
+      workspace_id: workspace_id,
+      ...(queryAnalysis.entities.channels?.length ? { channel_name: queryAnalysis.entities.channels[0] } : {}),
+      ...(queryAnalysis.entities.users?.length ? { username: queryAnalysis.entities.users[0] } : {})
+    };
+
+    const { data: matchedMessages, error: messagesError } = await supabaseClient.rpc(
+      'search_messages',
+      {
+        query_embedding: queryEmbedding,
+        filter: searchFilter,
+        match_count: 50
+      }
     );
 
-    console.log('\n=== Message Construction Stats ===');
-    console.log({
-      contextMessages: (context || []).length,
-      historyMessages: (conversationHistory || []).length,
-      systemPromptLength: systemPrompt.length,
-      userMessageLength: message.length
+    if (messagesError) {
+      console.error('Error fetching relevant messages:', messagesError);
+      throw messagesError;
+    }
+
+    if (matchedMessages && matchedMessages.length > 0) {
+      // Map the search results to MessageContext format with proper type handling
+      relevantMessages = matchedMessages.map(msg => ({
+        content: msg.content,
+        created_at: msg.metadata?.created_at,
+        channel_id: msg.metadata?.channel_id,
+        user_id: msg.metadata?.user_id,
+        channel_name: msg.metadata?.channel_name,
+        username: msg.metadata?.username || undefined,
+        user_full_name: msg.metadata?.full_name || undefined
+      }));
+    }
+
+    // 5. Assemble and filter context
+    const filteredContext = assembleContext(relevantMessages, queryAnalysis, {
+      maxContextItems: 10,
+      recencyWeight: 0.4,
+      channelWeight: 0.3,
+      userWeight: 0.3,
+      minScore: 0.2
     });
 
-    const messages: ChatMessage[] = [
-      {
-        role: 'system',
-        content: systemPrompt
-      },
-      ...(conversationHistory || []).map(msg => ({
-        role: msg.role as 'user' | 'assistant',
-        content: msg.content
-      })),
-      {
-        role: 'user',
-        content: message
-      }
+    // 6. Format context messages
+    const formattedContext = formatContextMessages(filteredContext);
+
+    // 7. Create the full system prompt with context
+    const workspaceContext = `You are in the workspace "${workspace.name}".`;
+    const systemPrompt = createSystemPrompt(workspaceContext, formattedContext, 
+      queryAnalysis.entities.channels?.[0],
+      queryAnalysis.entities.users?.[0]
+    );
+
+    // 8. Prepare messages for chat completion
+    const chatMessages: ChatMessage[] = [
+      { role: 'system', content: systemPrompt },
+      ...conversationHistory,
+      { role: 'user', content: message }
     ];
 
-    // 5. Get completion from OpenAI
-    console.log('Getting completion from OpenAI...');
+    // 9. Call OpenAI
     const completion = await openai.chat.completions.create({
-      model: 'gpt-3.5-turbo',
-      messages,
-      temperature: 0, // Zero temperature for maximum format compliance
+      model: 'gpt-3.5-turbo-16k',
+      messages: chatMessages,
+      temperature: 0.7,
       max_tokens: 1000,
-      presence_penalty: 0, // Remove penalties to ensure format is followed
+      top_p: 1,
       frequency_penalty: 0,
-      stream: false
+      presence_penalty: 0,
     });
 
-    const assistantMessage = completion.choices[0].message;
-
+    // 10. Return the response
     return new Response(
       JSON.stringify({
-        message: assistantMessage.content,
+        message: completion.choices[0].message.content,
         metadata: {
-          model: 'gpt-3.5-turbo',
-          context_messages: context?.length || 0
+          finish_reason: completion.choices[0].finish_reason,
+          workspace_id: workspace_id,
+          channel_id: channel_id,
+          user_id: user_id
         }
       }),
-      {
-        headers: { 'Content-Type': 'application/json' },
-        status: 200,
-      },
+      { headers: { 'Content-Type': 'application/json' } }
     );
+
   } catch (error) {
-    console.error('Error in chat-completion:', error);
+    console.error('Error:', error);
     return new Response(
       JSON.stringify({ error: error.message }),
-      {
-        headers: { 'Content-Type': 'application/json' },
-        status: 500,
-      },
+      { status: 500, headers: { 'Content-Type': 'application/json' } }
     );
   }
 }); 
