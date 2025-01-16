@@ -27,7 +27,83 @@ create index if not exists message_embeddings_workspace_id_idx on message_embedd
 create index if not exists message_embeddings_channel_id_idx on message_embeddings(channel_id);
 create index if not exists message_embeddings_user_id_idx on message_embeddings(user_id);
 
--- Drop existing function first
+-- Set up custom settings
+create or replace function set_app_settings()
+returns void
+language plpgsql
+as $$
+begin
+  -- Set the edge function URL
+  perform set_config(
+    'app.settings.edge_function_url',
+    'https://clohwjjmidcucvvxgxaf.supabase.co/functions/v1',
+    false
+  );
+  
+  -- Set the service role key
+  perform set_config(
+    'app.settings.service_role_key',
+    'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNsb2h3amptaWRjdWN2dnhneGFmIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTczNjIxNzQzNywiZXhwIjoyMDUxNzkzNDM3fQ.w52P0_40AJX1sOnZhlqIXCnVRPZXY8adlENFn2YtpCE',
+    false
+  );
+end;
+$$;
+
+-- Create a function to trigger embedding generation
+create or replace function trigger_generate_embedding()
+returns trigger
+language plpgsql
+as $$
+declare
+  response_status int;
+  response_body text;
+begin
+  -- Ensure settings are set
+  perform set_app_settings();
+
+  -- Call the Edge Function to generate embeddings
+  select
+    status, content
+  into
+    response_status, response_body
+  from
+    net.http_post(
+      url := current_setting('app.settings.edge_function_url') || '/generate-embeddings',
+      headers := jsonb_build_object(
+        'Content-Type', 'application/json',
+        'Authorization', 'Bearer ' || current_setting('app.settings.service_role_key')
+      ),
+      body := jsonb_build_object(
+        'message_id', NEW.id,
+        'content', NEW.content,
+        'workspace_id', NEW.workspace_id,
+        'channel_id', NEW.channel_id,
+        'user_id', NEW.user_id
+      )
+    );
+
+  -- Log the response for debugging
+  raise notice 'Embedding generation response: status %, body %', response_status, response_body;
+
+  -- Return the original message
+  return NEW;
+exception
+  when others then
+    -- Log any errors but don't block message creation
+    raise notice 'Error generating embedding: %', SQLERRM;
+    return NEW;
+end;
+$$;
+
+-- Create a trigger to automatically generate embeddings for new messages
+drop trigger if exists generate_embedding_trigger on messages;
+create trigger generate_embedding_trigger
+  after insert on messages
+  for each row
+  execute function trigger_generate_embedding();
+
+-- Drop existing functions first
+drop function if exists get_relevant_context(vector, uuid, float, int);
 drop function if exists get_relevant_context(vector, uuid, uuid, float, int);
 
 -- Function to get relevant context based on similarity search
@@ -68,7 +144,7 @@ $$;
 -- Set up RLS policies
 alter table public.message_embeddings enable row level security;
 
--- Drop existing policies first
+-- Drop existing policies
 drop policy if exists "Users can read embeddings from their workspaces" on public.message_embeddings;
 drop policy if exists "System can manage embeddings" on public.message_embeddings;
 

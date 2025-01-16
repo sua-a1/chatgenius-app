@@ -39,7 +39,6 @@ function AppContent() {
   // Redirect to signin if not authenticated
   useEffect(() => {
     if (isInitialized && !isAuthLoading && !profile) {
-      console.log('No profile found, redirecting to signin')
       router.push('/auth/signin')
     }
   }, [isInitialized, isAuthLoading, profile, router])
@@ -47,36 +46,24 @@ function AppContent() {
   // Update active workspace when workspaces load or change
   useEffect(() => {
     let mounted = true
-    console.log('Workspace effect running:', { 
-      workspacesCount: workspaces.length,
-      isWorkspacesLoading,
-      activeWorkspaceId: activeWorkspace?.id,
-      searchParamsWorkspace: searchParams.get('workspace')
-    })
 
     if (mounted && !isWorkspacesLoading && workspaces.length > 0) {
       const workspaceId = searchParams.get('workspace')
       
       if (workspaceId) {
-        // If we have a workspace ID in the URL, try to select it
         const workspace = workspaces.find(w => w.id === workspaceId)
         if (workspace) {
-          console.log('Setting workspace from URL:', workspace.id)
           setActiveWorkspace(workspace)
           return
         }
       }
       
-      // If the active workspace was deleted, clear it
       if (activeWorkspace && !workspaces.find(w => w.id === activeWorkspace.id)) {
-        console.log('Active workspace was deleted, clearing state')
         setActiveWorkspace(null)
         setActiveChannel(null)
         setActiveDM(null)
       }
-      // If no active workspace and workspaces exist, select the first one
       else if (!activeWorkspace) {
-        console.log('Setting first workspace as active:', workspaces[0].id)
         setActiveWorkspace(workspaces[0])
       }
     }
@@ -118,12 +105,14 @@ function AppContent() {
     if (channel) {
       setActiveChannel(channel)
       setActiveDM(null)
+      setActiveTab('chat')
     }
   }, [activeWorkspace, channels])
 
   const handleSelectDM = useCallback((userId: string) => {
     setActiveDM(userId)
     setActiveChannel(null)
+    setActiveTab('chat')
   }, [])
 
   const handleOpenProfileSettings = useCallback(() => {
@@ -136,6 +125,8 @@ function AppContent() {
 
   const handleTabChange = useCallback((tab: string) => {
     setActiveTab(tab)
+    setActiveChannel(null)
+    setActiveDM(null)
   }, [])
 
   // Show loading state while auth is initializing or checking
@@ -161,6 +152,49 @@ function AppContent() {
     return null
   }
 
+  const renderMainContent = () => {
+    switch (activeTab) {
+      case 'chat':
+        if (activeChannel) {
+          return (
+            <ChannelMessageArea
+              key={activeChannel.id}
+              selectedChannelId={activeChannel.id}
+              workspace={activeWorkspace!}
+              onClose={() => setActiveChannel(null)}
+            />
+          )
+        }
+        if (activeDM) {
+          return (
+            <DirectMessageArea
+              key={activeDM}
+              selectedUserId={activeDM}
+              workspace={activeWorkspace!}
+              onClose={() => setActiveDM(null)}
+            />
+          )
+        }
+        return (
+          <div className="flex items-center justify-center h-full text-muted-foreground">
+            Select a channel or direct message to start chatting
+          </div>
+        )
+      case 'manage':
+        return <ChannelManagement workspace={activeWorkspace} onTabChange={handleTabChange} />
+      case 'admin':
+        return (
+          <AdminPanel
+            workspaces={workspaces}
+            onDeleteWorkspace={handleDeleteWorkspace}
+            onTabChange={handleTabChange}
+          />
+        )
+      default:
+        return null
+    }
+  }
+
   return (
     <div className="flex h-screen">
       <Sidebar
@@ -171,7 +205,7 @@ function AppContent() {
         onOpenProfileSettings={handleOpenProfileSettings}
       />
 
-      <div className="flex-1 flex">
+      <div className="flex-1 flex flex-col">
         {activeWorkspace && (
           <WorkspacePage
             workspace={activeWorkspace}
@@ -180,39 +214,10 @@ function AppContent() {
             onSelectChannel={handleSelectChannel}
             onSelectDM={handleSelectDM}
             onTabChange={handleTabChange}
-          />
+          >
+            {renderMainContent()}
+          </WorkspacePage>
         )}
-
-        <div className="flex-1">
-          {activeTab === 'chat' && activeChannel && (
-            <ChannelMessageArea
-              key={activeChannel.id}
-              selectedChannelId={activeChannel.id}
-              workspace={activeWorkspace!}
-              onClose={() => setActiveChannel(null)}
-            />
-          )}
-
-          {activeTab === 'chat' && activeDM && (
-            <DirectMessageArea
-              key={activeDM}
-              selectedUserId={activeDM}
-              workspace={activeWorkspace!}
-              onClose={() => setActiveDM(null)}
-            />
-          )}
-
-          {activeTab === 'manage' && (
-            <ChannelManagement workspace={activeWorkspace} />
-          )}
-
-          {activeTab === 'admin' && (
-            <AdminPanel
-              workspaces={workspaces}
-              onDeleteWorkspace={handleDeleteWorkspace}
-            />
-          )}
-        </div>
       </div>
 
       <Dialog open={showProfileSettings} onOpenChange={handleCloseProfileSettings}>

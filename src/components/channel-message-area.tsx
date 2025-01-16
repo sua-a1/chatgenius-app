@@ -72,27 +72,18 @@ export default function ChannelMessageArea({ workspace, selectedChannelId, onClo
 
   return (
     <div className="flex flex-col h-full">
-      <div className="border-b px-4 py-2">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-2">
-            <h2 className="text-lg font-semibold">#{selectedChannel?.name}</h2>
-          </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => {
-              if (selectedChannelId) {
-                window.history.pushState({}, '', `/app/workspaces/${workspace?.id}`);
-                onClose?.();
-              }
-            }}
-            className="h-8 w-8"
-          >
-            <X className="h-4 w-4" />
-          </Button>
+    <div className="border-b bg-gradient-to-r from-[#4A3B8C]/5 to-[#5D3B9E]/5">
+      <div className="flex items-center justify-between p-4">
+        <div className="flex items-center gap-2">
+          <h2 className="text-lg font-semibold">#{selectedChannel?.name}</h2>
         </div>
+        <Button variant="ghost" size="icon" className="hover:bg-[#4A3B8C]/20" onClick={onClose}>
+          <X className="h-4 w-4" />
+        </Button>
       </div>
-      <div className="flex flex-1 overflow-hidden">
+    </div>
+
+      <div className="flex flex-1 overflow-hidden flex">
         <div className="flex-1 flex flex-col overflow-hidden">
           <ScrollArea className="flex-1">
             {isLoading ? (

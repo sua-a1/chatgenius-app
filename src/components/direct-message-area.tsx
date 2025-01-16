@@ -113,8 +113,8 @@ export default function DirectMessageArea({ workspace, selectedUserId, onClose }
   }
 
   return (
-    <div className="flex flex-col h-full">
-      <div className="border-b px-4 py-2">
+    <div className="h-full flex flex-col">
+      <div className="border-b px-4 py-2 shrink-0 bg-white">
         {selectedUser && (
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-2">
@@ -148,155 +148,155 @@ export default function DirectMessageArea({ workspace, selectedUserId, onClose }
       </div>
 
       <ScrollArea ref={scrollAreaRef} className="flex-1 px-4">
-        {isLoading ? (
-          <div className="flex items-center justify-center h-full">
-            Loading messages...
-          </div>
-        ) : messages.length === 0 ? (
-          <div className="flex items-center justify-center h-full text-muted-foreground">
-            No messages yet
-          </div>
-        ) : (
-          <div className="py-4 space-y-6">
-            {messages.map((message, index) => {
-              const previousMessage = index > 0 ? messages[index - 1] : null
-              const isFirstMessageFromUser = !previousMessage || previousMessage.sender_id !== message.sender_id
-              const timeDiff = previousMessage 
-                ? new Date(message.created_at).getTime() - new Date(previousMessage.created_at).getTime()
-                : 0
-              const shouldShowHeader = isFirstMessageFromUser || timeDiff > 300000 // 5 minutes
-              const isLastMessage = index === messages.length - 1
+          {isLoading ? (
+            <div className="flex items-center justify-center h-full">
+              Loading messages...
+            </div>
+          ) : messages.length === 0 ? (
+            <div className="flex items-center justify-center h-full text-muted-foreground">
+              No messages yet
+            </div>
+          ) : (
+            <div className="py-4 space-y-6">
+              {messages.map((message, index) => {
+                const previousMessage = index > 0 ? messages[index - 1] : null
+                const isFirstMessageFromUser = !previousMessage || previousMessage.sender_id !== message.sender_id
+                const timeDiff = previousMessage 
+                  ? new Date(message.created_at).getTime() - new Date(previousMessage.created_at).getTime()
+                  : 0
+                const shouldShowHeader = isFirstMessageFromUser || timeDiff > 300000 // 5 minutes
+                const isLastMessage = index === messages.length - 1
 
-              return (
-                <div
-                  key={message.id}
-                  ref={isLastMessage ? lastMessageRef : undefined}
-                  className="group hover:bg-accent/5 -mx-4 px-4 py-1 rounded"
-                >
-                  {shouldShowHeader && (
-                    <div className="flex items-center space-x-2 mb-1">
-                      <div className="flex items-center space-x-2">
-                        <UserAvatar 
-                          user={message.sender}
-                          size="sm"
-                          status={userStatuses.get(message.sender.id)}
-                          showDMButton={false}
-                        />
-                        <div className="flex items-baseline space-x-2">
-                          <UserName
+                return (
+                  <div
+                    key={message.id}
+                    ref={isLastMessage ? lastMessageRef : undefined}
+                    className="group hover:bg-accent/5 -mx-4 px-4 py-1 rounded"
+                  >
+                    {shouldShowHeader && (
+                      <div className="flex items-center space-x-2 mb-1">
+                        <div className="flex items-center space-x-2">
+                          <UserAvatar 
                             user={message.sender}
+                            size="sm"
+                            status={userStatuses.get(message.sender.id)}
                             showDMButton={false}
-                            className="font-semibold"
                           />
-                          <span className="text-xs text-muted-foreground">
-                            {formatDistanceToNow(new Date(message.created_at), { addSuffix: true })}
-                          </span>
+                          <div className="flex items-baseline space-x-2">
+                            <UserName
+                              user={message.sender}
+                              showDMButton={false}
+                              className="font-semibold"
+                            />
+                            <span className="text-xs text-muted-foreground">
+                              {formatDistanceToNow(new Date(message.created_at), { addSuffix: true })}
+                            </span>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  )}
-                  <div className="flex items-start pl-12">
-                    <div className="flex-1">
-                      <div className="flex flex-col gap-1">
-                        <div className="flex items-start group/message">
-                          {editingMessage?.id === message.id ? (
-                            <div className="flex-1 flex items-center gap-2">
-                              <Input
-                                value={editingMessage.content}
-                                onChange={(e) => setEditingMessage({ id: message.id, content: e.target.value })}
-                                className="flex-1"
-                              />
-                              <Button
-                                size="sm"
-                                onClick={() => handleSaveEdit(message.id, editingMessage.content)}
-                                disabled={!editingMessage.content.trim() || editingMessage.content === message.content}
-                              >
-                                Save
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                onClick={handleCancelEdit}
-                              >
-                                Cancel
-                              </Button>
-                            </div>
-                          ) : (
-                            <>
-                              <p className="flex-1 text-sm leading-relaxed">
-                                {message.content}
-                              </p>
-                              {message.sender_id === profile?.id && (
-                                <div className="opacity-0 group-hover/message:opacity-100 transition-opacity">
-                                  <DropdownMenu>
-                                    <DropdownMenuTrigger asChild>
-                                      <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
-                                        <MoreVertical className="h-4 w-4" />
-                                      </Button>
-                                    </DropdownMenuTrigger>
-                                    <DropdownMenuContent align="end">
-                                      <DropdownMenuItem onClick={() => handleStartEdit(message.id, message.content)}>
-                                        <Edit className="h-4 w-4 mr-2" />
-                                        Edit
-                                      </DropdownMenuItem>
-                                      <DropdownMenuItem onClick={() => deleteMessage(message.id)}>
-                                        <Trash className="h-4 w-4 mr-2" />
-                                        Delete
-                                      </DropdownMenuItem>
-                                    </DropdownMenuContent>
-                                  </DropdownMenu>
-                                </div>
-                              )}
-                            </>
+                    )}
+                    <div className="flex items-start pl-12">
+                      <div className="flex-1">
+                        <div className="flex flex-col gap-1">
+                          <div className="flex items-start group/message">
+                            {editingMessage?.id === message.id ? (
+                              <div className="flex-1 flex items-center gap-2">
+                                <Input
+                                  value={editingMessage.content}
+                                  onChange={(e) => setEditingMessage({ id: message.id, content: e.target.value })}
+                                  className="flex-1"
+                                />
+                                <Button
+                                  size="sm"
+                                  onClick={() => handleSaveEdit(message.id, editingMessage.content)}
+                                  disabled={!editingMessage.content.trim() || editingMessage.content === message.content}
+                                >
+                                  Save
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={handleCancelEdit}
+                                >
+                                  Cancel
+                                </Button>
+                              </div>
+                            ) : (
+                              <>
+                                <p className="flex-1 text-sm leading-relaxed">
+                                  {message.content}
+                                </p>
+                                {message.sender_id === profile?.id && (
+                                  <div className="opacity-0 group-hover/message:opacity-100 transition-opacity">
+                                    <DropdownMenu>
+                                      <DropdownMenuTrigger asChild>
+                                        <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
+                                          <MoreVertical className="h-4 w-4" />
+                                        </Button>
+                                      </DropdownMenuTrigger>
+                                      <DropdownMenuContent align="end">
+                                        <DropdownMenuItem onClick={() => handleStartEdit(message.id, message.content)}>
+                                          <Edit className="h-4 w-4 mr-2" />
+                                          Edit
+                                        </DropdownMenuItem>
+                                        <DropdownMenuItem onClick={() => deleteMessage(message.id)}>
+                                          <Trash className="h-4 w-4 mr-2" />
+                                          Delete
+                                        </DropdownMenuItem>
+                                      </DropdownMenuContent>
+                                    </DropdownMenu>
+                                  </div>
+                                )}
+                              </>
+                            )}
+                          </div>
+                          {message.attachments && message.attachments.length > 0 && (
+                            <FilePreview attachments={message.attachments} />
+                          )}
+                          {!message.id.toString().startsWith('temp-') && (
+                            <MessageReactions messageId={message.id} isDirect />
                           )}
                         </div>
-                        {message.attachments && message.attachments.length > 0 && (
-                          <FilePreview attachments={message.attachments} />
-                        )}
-                        {!message.id.toString().startsWith('temp-') && (
-                          <MessageReactions messageId={message.id} isDirect />
-                        )}
                       </div>
                     </div>
                   </div>
-                </div>
-              )
-            })}
-          </div>
-        )}
-      </ScrollArea>
+                )
+              })}
+            </div>
+          )}
+        </ScrollArea>
 
-      <form onSubmit={handleSendMessage} className="border-t p-4">
-        <div className="flex flex-col gap-2">
-          <div className="flex space-x-2">
-            <Input
-              value={newMessage}
-              onChange={e => setNewMessage(e.target.value)}
-              placeholder={`Message ${selectedUser?.username}`}
-              className="flex-1"
-            />
-            <Button type="submit" disabled={!newMessage.trim() && selectedFiles.length === 0}>
-              Send
-            </Button>
+        <form onSubmit={handleSendMessage} className="border-t p-4">
+          <div className="flex flex-col gap-2">
+            <div className="flex space-x-2">
+              <Input
+                value={newMessage}
+                onChange={e => setNewMessage(e.target.value)}
+                placeholder={`Message ${selectedUser?.username}`}
+                className="flex-1"
+              />
+              <Button type="submit" disabled={!newMessage.trim() && selectedFiles.length === 0}>
+                Send
+              </Button>
+            </div>
+            {selectedFiles.length > 0 && (
+              <FilePreview
+                attachments={selectedFiles.map(url => ({
+                  url,
+                  filename: url.split('/').pop() || 'unknown'
+                }))}
+              />
+            )}
+            {workspace && (
+              <FileUpload
+                workspaceId={workspace.id}
+                onFilesSelected={urls => setSelectedFiles(urls)}
+                disabled={!selectedUserId}
+              />
+            )}
           </div>
-          {selectedFiles.length > 0 && (
-            <FilePreview
-              attachments={selectedFiles.map(url => ({
-                url,
-                filename: url.split('/').pop() || 'unknown'
-              }))}
-            />
-          )}
-          {workspace && (
-            <FileUpload
-              workspaceId={workspace.id}
-              onFilesSelected={urls => setSelectedFiles(urls)}
-              disabled={!selectedUserId}
-            />
-          )}
-        </div>
-      </form>
-    </div>
+        </form>
+      </div>
   )
 }
 
