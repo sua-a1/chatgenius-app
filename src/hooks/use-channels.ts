@@ -9,7 +9,7 @@ import { create } from 'zustand'
 
 interface ChannelStore {
   channelsByWorkspace: Record<string, Channel[]>
-  setChannels: (workspaceId: string, channels: Channel[]) => void
+  setChannels: (workspaceId: string | undefined, channels: Channel[]) => void
   addChannel: (workspaceId: string, channel: Channel) => void
   updateChannel: (workspaceId: string, channelId: string, updates: Partial<Channel>) => void
   removeChannel: (workspaceId: string, channelId: string) => void
@@ -21,7 +21,7 @@ const useChannelStore = create<ChannelStore>((set) => ({
     set((state) => ({
       channelsByWorkspace: {
         ...state.channelsByWorkspace,
-        [workspaceId]: channels,
+        [workspaceId || '']: channels,
       },
     })),
   addChannel: (workspaceId, channel) =>
@@ -304,6 +304,8 @@ export function useChannels(workspaceId: string | undefined) {
   }
 
   const deleteChannel = async (id: string) => {
+    if (!workspaceId) return false;
+    
     try {
       // Delete channel memberships first (due to foreign key constraint)
       const { error: membershipError } = await supabase

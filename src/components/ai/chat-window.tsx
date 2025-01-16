@@ -111,10 +111,6 @@ export function AIChatWindow({ workspaceId }: AIChatWindowProps) {
 
   return (
     <div className="flex flex-col h-full bg-white dark:bg-gray-800 rounded-lg shadow-lg">
-      <div className="p-4 border-b dark:border-gray-700">
-        <h2 className="text-lg font-semibold">AI Assistant</h2>
-      </div>
-
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {messages.length === 0 && (
           <div className="text-center text-muted-foreground mt-8">

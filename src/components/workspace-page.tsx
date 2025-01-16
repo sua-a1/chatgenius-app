@@ -113,6 +113,14 @@ export default function WorkspacePage({ workspace, workspaces, onOpenProfileSett
               <Shield className="h-4 w-4" />
               Admin
             </Button>
+            <Button
+              variant="ghost"
+              onClick={() => setShowAIChat(!showAIChat)}
+              className="flex items-center gap-2"
+            >
+              <Bot className="h-4 w-4" />
+              AI Assistant
+            </Button>
           </div>
         </div>
       </header>
@@ -184,22 +192,19 @@ export default function WorkspacePage({ workspace, workspaces, onOpenProfileSett
         </CommandList>
       </CommandDialog>
 
-      {/* Floating AI Chat Button */}
-      <Button
-        onClick={() => setShowAIChat(!showAIChat)}
-        className="fixed bottom-6 right-6 bg-[#3A2E6E] hover:bg-[#2A2154] text-white rounded-full p-3 shadow-lg z-20"
-      >
-        <Bot className="h-6 w-6" />
-      </Button>
-
       {/* AI Chat Window */}
       {showAIChat && workspace && (
-        <div className="fixed inset-0 z-10 bg-background/80 backdrop-blur-sm">
+        <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm">
           <div className="fixed inset-4 bg-background border rounded-lg shadow-lg overflow-hidden">
             <div className="flex flex-col h-full">
               <div className="flex items-center justify-between p-4 border-b">
                 <h2 className="text-lg font-semibold">AI Assistant</h2>
-                <Button variant="ghost" size="icon" onClick={() => setShowAIChat(false)}>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setShowAIChat(false)}
+                  className="h-8 w-8"
+                >
                   <X className="h-4 w-4" />
                 </Button>
               </div>
