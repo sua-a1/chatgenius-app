@@ -76,4 +76,12 @@ export interface WorkspaceMember {
   avatar_url: string | null
   created_at: string
   updated_at: string
+}
+
+export type UserStatus = 'online' | 'offline' | 'away' | 'busy'
+
+export interface DirectMessageChat {
+  user_id: string
+  username: string | null
+  avatar_url: string | null
 } 
