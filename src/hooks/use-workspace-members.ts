@@ -1,3 +1,5 @@
+'use client'
+
 import { useState, useEffect } from 'react'
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
 import { useToast } from '@/hooks/use-toast'
@@ -26,6 +28,8 @@ export function useWorkspaceMembers(workspaceId: string | null) {
   const [members, setMembers] = useState<WorkspaceMember[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [workspace, setWorkspace] = useState<{ owner_id: string } | null>(null)
+  const [isOwner, setIsOwner] = useState(false)
+  const [isMemberAdmin, setIsMemberAdmin] = useState(false)
 
   // Load initial data and set up subscriptions
   useEffect(() => {
@@ -75,6 +79,8 @@ export function useWorkspaceMembers(workspaceId: string | null) {
     } else {
       setWorkspace(null)
       setMembers([])
+      setIsOwner(false)
+      setIsMemberAdmin(false)
     }
   }, [workspaceId])
 
@@ -92,9 +98,11 @@ export function useWorkspaceMembers(workspaceId: string | null) {
       if (error) throw error
       console.log('Workspace details loaded:', data)
       setWorkspace(data)
+      setIsOwner(data.owner_id === profile?.id)
     } catch (error) {
       console.error('Error loading workspace:', error)
       setWorkspace(null)
+      setIsOwner(false)
     }
   }
 
@@ -120,6 +128,12 @@ export function useWorkspaceMembers(workspaceId: string | null) {
       }))
 
       setMembers(formattedMembers)
+      
+      // Update member admin status
+      if (profile?.id) {
+        const currentMember = formattedMembers.find(m => m.id === profile.id)
+        setIsMemberAdmin(currentMember?.role === 'admin' || false)
+      }
     } catch (error: any) {
       console.error('Error loading workspace members:', error)
       toast({
@@ -132,20 +146,7 @@ export function useWorkspaceMembers(workspaceId: string | null) {
     }
   }
 
-  const isAdmin = profile?.id ? (
-    (() => {
-      const isMemberAdmin = members.some(m => m.id === profile.id && m.role === 'admin')
-      const isOwner = workspace?.owner_id === profile.id
-      console.log('Admin check:', {
-        profileId: profile.id,
-        workspaceOwnerId: workspace?.owner_id,
-        isOwner,
-        isMemberAdmin,
-        members: members.map(m => ({ id: m.id, role: m.role }))
-      })
-      return isMemberAdmin || isOwner
-    })()
-  ) : false
+  const isAdmin = isOwner || isMemberAdmin
 
   const addMember = async (email: string, role: 'member' | 'admin' = 'member') => {
     if (!workspaceId) return

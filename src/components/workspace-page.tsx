@@ -19,6 +19,7 @@ import { UserAvatar } from '@/components/ui/user-avatar'
 import { ChannelList } from '@/components/channel-list'
 import { DirectMessageList } from '@/components/direct-message-list'
 import { AIChatWindow } from './ai/chat-window'
+import { AdminPanel } from './admin-panel'
 
 interface WorkspacePageProps {
   workspace?: Workspace | null
@@ -37,11 +38,12 @@ export default function WorkspacePage({ workspace, workspaces, onOpenProfileSett
   const [showMemberSearch, setShowMemberSearch] = useState(false)
   const [memberSearchQuery, setMemberSearchQuery] = useState('')
   const [showAIChat, setShowAIChat] = useState(false)
+  const [activeTab, setActiveTab] = useState('chat')
   const { toast } = useToast()
   const { channels, isLoading: isLoadingChannels, createChannel } = useChannels(workspace?.id)
   const { recentChats, isLoading: isLoadingDMs, refreshChats } = useDirectMessages(workspace?.id, null)
   const [displayProfile, setDisplayProfile] = useState(profile)
-  const { members, isLoading: isLoadingMembers } = useWorkspaceMembers(workspace?.id || null)
+  const { members, isLoading: isLoadingMembers, isAdmin } = useWorkspaceMembers(workspace?.id || null)
 
   const filteredMembers = useMemo(() => {
     if (!members) return []
@@ -77,6 +79,19 @@ export default function WorkspacePage({ workspace, workspaces, onOpenProfileSett
     refreshChats()
   }
 
+  const handleTabChange = (tab: string) => {
+    setActiveTab(tab)
+    onTabChange(tab)
+  }
+
+  // Effect to handle workspace switching
+  useEffect(() => {
+    if (activeTab === 'admin' && !isAdmin) {
+      setActiveTab('chat')
+      onTabChange('chat')
+    }
+  }, [workspace?.id, isAdmin]) // Watch for workspace changes and admin status changes
+
   return (
     <div className="h-full flex flex-col">
       {/* Top Navigation Bar */}
@@ -105,14 +120,16 @@ export default function WorkspacePage({ workspace, workspaces, onOpenProfileSett
             </div>
           </div>
           <div className="flex items-center gap-4">
-            <Button
-              variant="ghost"
-              onClick={() => onTabChange('admin')}
-              className="flex items-center gap-2"
-            >
-              <Shield className="h-4 w-4" />
-              Admin
-            </Button>
+            {isAdmin && (
+              <Button
+                variant="ghost"
+                onClick={() => handleTabChange('admin')}
+                className="flex items-center gap-2"
+              >
+                <Shield className="h-4 w-4" />
+                Admin
+              </Button>
+            )}
             <Button
               variant="ghost"
               onClick={() => setShowAIChat(!showAIChat)}
@@ -160,7 +177,14 @@ export default function WorkspacePage({ workspace, workspaces, onOpenProfileSett
 
         {/* Main Content Area */}
         <main className="flex-1 overflow-auto">
-          {children}
+          {activeTab === 'admin' && workspace && isAdmin ? (
+            <AdminPanel 
+              workspace={workspace} 
+              onTabChange={handleTabChange} 
+            />
+          ) : (
+            children
+          )}
         </main>
       </div>
 

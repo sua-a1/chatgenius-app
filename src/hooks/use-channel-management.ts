@@ -48,13 +48,14 @@ export function useChannelManagement(workspaceId: string | undefined, channels: 
   const { profile } = useAuth()
   const { toast } = useToast()
   const [isAdmin, setIsAdmin] = useState(false)
+  const [isOwner, setIsOwner] = useState(false)
   const [selectedChannel, setSelectedChannel] = useState<Channel | null>(null)
   const [channelMembers, setChannelMembers] = useState<ChannelMember[]>([])
   const [workspaceMembers, setWorkspaceMembers] = useState<WorkspaceMember[]>([])
   const [isLoadingChannel, setIsLoadingChannel] = useState(true)
   const [isLoadingWorkspace, setIsLoadingWorkspace] = useState(true)
 
-  // Check if current user is admin
+  // Check if current user is admin or owner
   useEffect(() => {
     if (workspaceId && profile?.id) {
       checkAdminStatus()
@@ -116,16 +117,32 @@ export function useChannelManagement(workspaceId: string | undefined, channels: 
 
   const checkAdminStatus = async () => {
     try {
+      // First check if user is workspace owner
+      const { data: workspace, error: workspaceError } = await supabase
+        .from('workspaces')
+        .select('owner_id')
+        .eq('id', workspaceId)
+        .single()
+
+      if (!workspaceError && workspace && workspace.owner_id === profile?.id) {
+        setIsOwner(true)
+        setIsAdmin(true)
+        return
+      }
+
+      // If not owner, check admin status
       const { data, error } = await supabase
         .rpc('check_workspace_admin_status', {
           target_workspace_id: workspaceId
         })
 
       if (error) throw error
-      setIsAdmin(data === 'admin' || data === 'owner')
+      setIsAdmin(data === 'admin')
+      setIsOwner(false)
     } catch (error) {
       console.error('Error checking admin status:', error)
       setIsAdmin(false)
+      setIsOwner(false)
     }
   }
 
@@ -353,7 +370,7 @@ export function useChannelManagement(workspaceId: string | undefined, channels: 
   }
 
   return {
-    isAdmin,
+    isAdmin: isAdmin || isOwner,
     channelMembers,
     workspaceMembers,
     isLoadingChannel,

@@ -1,4 +1,4 @@
--- Function to delete a workspace with role checking
+-- Function to delete a workspace with owner check
 create or replace function public.delete_workspace(
     workspace_id_param uuid
 )
@@ -6,19 +6,14 @@ returns void
 language plpgsql
 security definer
 as $$
-declare
-    user_role text;
 begin
-    -- Check if the user has admin role in the workspace
-    select role into user_role
-    from public.workspace_memberships
-    where workspace_id = workspace_id_param
-    and user_id = auth.uid()
-    and role = 'admin';
-
-    -- If user is not an admin, raise an error
-    if user_role is null then
-        raise exception 'Access denied. Only workspace admins can delete workspaces.';
+    -- Check if the user is the workspace owner
+    if not exists (
+        select 1 from public.workspaces
+        where id = workspace_id_param
+        and owner_id = auth.uid()
+    ) then
+        raise exception 'Access denied. Only the workspace owner can delete workspaces.';
     end if;
 
     -- Delete all related data in the correct order to avoid foreign key conflicts
