@@ -12,12 +12,23 @@ import { useChannels } from '@/hooks/use-channels'
 import { useChannelManagement } from '@/hooks/use-channel-management'
 import { useToast } from '@/hooks/use-toast'
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog"
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { ChevronDown, X } from 'lucide-react'
+import { ChevronDown, X, Trash2 } from 'lucide-react'
 
 interface ChannelManagementProps {
   workspace: Workspace | null;
@@ -25,7 +36,7 @@ interface ChannelManagementProps {
 }
 
 export function ChannelManagement({ workspace, onTabChange }: ChannelManagementProps) {
-  const { channels, isLoading: isLoadingChannels } = useChannels(workspace?.id)
+  const { channels, isLoading: isLoadingChannels, deleteChannel } = useChannels(workspace?.id)
   const { 
     isAdmin, 
     channelMembers, 
@@ -108,6 +119,18 @@ export function ChannelManagement({ workspace, onTabChange }: ChannelManagementP
     member => !channelMembers.some(cm => cm.id === member.id)
   )
 
+  const handleDeleteChannel = async (channelId: string) => {
+    if (!workspace || !isAdmin) return
+    const success = await deleteChannel(channelId)
+    if (success) {
+      setSelectedChannel(null)
+      toast({
+        title: 'Channel deleted',
+        description: 'The channel has been successfully deleted.',
+      })
+    }
+  }
+
   if (!workspace) {
     return <div className="p-4">Please select a workspace to manage channels.</div>
   }
@@ -120,14 +143,6 @@ export function ChannelManagement({ workspace, onTabChange }: ChannelManagementP
       <div className="p-4 space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="text-2xl font-bold">Channel Management</h2>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => onTabChange('chat')}
-            className="h-8 w-8"
-          >
-            <X className="h-4 w-4" />
-          </Button>
         </div>
         <div className="flex space-x-4">
           <div className="w-1/3">
@@ -139,20 +154,21 @@ export function ChannelManagement({ workspace, onTabChange }: ChannelManagementP
                 <div className="text-center p-4">No channels found</div>
               ) : (
                 channels.map(channel => (
-                  <Button 
-                    key={channel.id}
-                    variant={selectedChannel?.id === channel.id ? "default" : "ghost"}
-                    className="w-full justify-start mb-2"
-                    onClick={() => handleSelectChannel(channel)}
-                  >
-                    <div className="flex items-center">
-                      <span className="mr-2">#</span>
-                      <span>{channel.name}</span>
-                      {channel.is_private && (
-                        <span className="ml-2 text-xs bg-secondary px-1 rounded">Private</span>
-                      )}
-                    </div>
-                  </Button>
+                  <div key={channel.id} className="flex items-center justify-between mb-2 hover:bg-accent rounded-md">
+                    <Button 
+                      variant={selectedChannel?.id === channel.id ? "default" : "ghost"}
+                      className="w-full justify-start"
+                      onClick={() => handleSelectChannel(channel)}
+                    >
+                      <div className="flex items-center">
+                        <span className="mr-2">#</span>
+                        <span>{channel.name}</span>
+                        {channel.is_private && (
+                          <span className="ml-2 text-xs bg-secondary px-1 rounded">Private</span>
+                        )}
+                      </div>
+                    </Button>
+                  </div>
                 ))
               )}
             </ScrollArea>
@@ -163,13 +179,44 @@ export function ChannelManagement({ workspace, onTabChange }: ChannelManagementP
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
                   <h3 className="text-lg font-semibold">#{selectedChannel.name}</h3>
-                  <div className="flex items-center space-x-2">
-                    <Label htmlFor="private">Private</Label>
-                    <Switch
-                      id="private"
-                      checked={selectedChannel.is_private}
-                      onCheckedChange={handleTogglePrivacy}
-                    />
+                  <div className="flex items-center space-x-4">
+                    <div className="flex items-center space-x-2">
+                      <Label htmlFor="private">Private</Label>
+                      <Switch
+                        id="private"
+                        checked={selectedChannel.is_private}
+                        onCheckedChange={handleTogglePrivacy}
+                      />
+                    </div>
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button 
+                          variant="destructive" 
+                          size="sm"
+                          className="flex items-center gap-2"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                          Delete Channel
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Delete Channel</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            Are you sure you want to delete #{selectedChannel.name}? This action cannot be undone.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Cancel</AlertDialogCancel>
+                          <AlertDialogAction 
+                            onClick={() => handleDeleteChannel(selectedChannel.id)}
+                            className="bg-destructive hover:bg-destructive/90"
+                          >
+                            Delete
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
                   </div>
                 </div>
 

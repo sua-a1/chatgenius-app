@@ -10,6 +10,7 @@ import { useWorkspaceMembers } from '@/hooks/use-workspace-members'
 import { useWorkspaces } from '@/hooks/use-workspaces'
 import { useChannels } from '@/hooks/use-channels'
 import { Workspace } from '@/types'
+import { ChannelManagement } from '@/components/channel-management'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -75,11 +76,6 @@ export function AdminPanel({ workspaces = [], onDeleteWorkspace, onTabChange }: 
     if (success) {
       setSelectedWorkspace(null)
     }
-  }
-
-  const handleDeleteChannel = async (channelId: string) => {
-    if (!selectedWorkspace || !isAdmin) return
-    await deleteChannel(channelId)
   }
 
   return (
@@ -218,50 +214,12 @@ export function AdminPanel({ workspaces = [], onDeleteWorkspace, onTabChange }: 
             {isAdmin && (
               <>
                 <TabsContent value="channels" className="mt-4">
-                  <div className="space-y-4">
-                    <h3 className="text-lg font-semibold">Manage Channels</h3>
-                    {isLoadingChannels ? (
-                      <div className="flex items-center justify-center p-4">
-                        <Loader2 className="h-6 w-6 animate-spin" />
-                      </div>
-                    ) : channels.length === 0 ? (
-                      <p className="text-sm text-muted-foreground">No channels in this workspace</p>
-                    ) : (
-                      <ScrollArea className="h-[300px] rounded-md border p-4">
-                        <div className="space-y-2">
-                          {channels.map((channel) => (
-                            <div key={channel.id} className="flex items-center justify-between gap-2 p-2 rounded-lg hover:bg-accent">
-                              <div className="flex items-center gap-2">
-                                <Hash className="h-4 w-4 text-muted-foreground" />
-                                <span className="font-medium">{channel.name}</span>
-                              </div>
-                              <AlertDialog>
-                                <AlertDialogTrigger asChild>
-                                  <Button variant="ghost" size="icon" className="h-8 w-8">
-                                    <Trash2 className="h-4 w-4" />
-                                  </Button>
-                                </AlertDialogTrigger>
-                                <AlertDialogContent>
-                                  <AlertDialogHeader>
-                                    <AlertDialogTitle>Delete Channel</AlertDialogTitle>
-                                    <AlertDialogDescription>
-                                      Are you sure you want to delete #{channel.name}? This action cannot be undone.
-                                    </AlertDialogDescription>
-                                  </AlertDialogHeader>
-                                  <AlertDialogFooter>
-                                    <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                    <AlertDialogAction onClick={() => handleDeleteChannel(channel.id)}>
-                                      Delete
-                                    </AlertDialogAction>
-                                  </AlertDialogFooter>
-                                </AlertDialogContent>
-                              </AlertDialog>
-                            </div>
-                          ))}
-                        </div>
-                      </ScrollArea>
-                    )}
-                  </div>
+                  {selectedWorkspace && (
+                    <ChannelManagement 
+                      workspace={selectedWorkspace}
+                      onTabChange={onTabChange}
+                    />
+                  )}
                 </TabsContent>
 
                 <TabsContent value="settings" className="mt-4">

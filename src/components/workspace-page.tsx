@@ -107,14 +107,6 @@ export default function WorkspacePage({ workspace, workspaces, onOpenProfileSett
           <div className="flex items-center gap-4">
             <Button
               variant="ghost"
-              onClick={() => onTabChange('manage')}
-              className="flex items-center gap-2"
-            >
-              <Users className="h-4 w-4" />
-              Manage Channels
-            </Button>
-            <Button
-              variant="ghost"
               onClick={() => onTabChange('admin')}
               className="flex items-center gap-2"
             >
