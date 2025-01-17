@@ -27,10 +27,7 @@ as $$
 declare
     pending_doc record;
     edge_function_url text;
-    response_status int;
-    response_body json;
     service_role_key text;
-    response_text text;
 begin
     -- Get environment variables from settings table using our custom function
     edge_function_url := app_settings.get_setting('supabase_url') || '/functions/v1/process-document';
@@ -78,8 +75,15 @@ begin
                     'fileId=' || pending_doc.file_id || 
                     '&workspaceId=' || pending_doc.workspace_id || 
                     coalesce('&channelId=' || pending_doc.channel_id, '') || 
-                    coalesce('&userId=' || pending_doc.user_id, '')
+                    coalesce('&userId=' || pending_doc.user_id, ''),
+                    headers := format(
+                        '[{"name": "Authorization", "value": "Bearer %s"}]',
+                        service_role_key
+                    )::jsonb
                 );
+
+                -- Wait a bit for the document to be processed
+                perform pg_sleep(2);
 
                 -- Check if document was actually created
                 perform id 
