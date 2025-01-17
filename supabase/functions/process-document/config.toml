@@ -1,0 +1,2 @@
+[functions.process-document]
+verify_jwt = true 

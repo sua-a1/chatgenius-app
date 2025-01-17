@@ -90,9 +90,20 @@ export interface File {
   id: string;
   user_id: string;
   workspace_id: string;
+  channel_id: string | null;
+  direct_message_id: string | null;
   file_url: string;
   filename: string;
-  channel_id: string | null;
+  file_type: string;
+  file_size: number;
+  metadata: {
+    content_type: string;
+    last_modified: number;
+    extension: string;
+    original_name: string;
+    storage_path: string;
+    bucket: string;
+  };
   created_at: string;
 }
 

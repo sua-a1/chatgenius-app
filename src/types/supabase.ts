@@ -177,8 +177,19 @@ export interface Database {
           user_id: string
           workspace_id: string
           channel_id: string | null
+          direct_message_id: string | null
           file_url: string
           filename: string
+          file_type: string
+          file_size: number
+          metadata: {
+            content_type: string
+            last_modified: number
+            extension: string
+            original_name: string
+            storage_path: string
+            bucket: string
+          }
           created_at: string
         }
         Insert: {
@@ -186,13 +197,34 @@ export interface Database {
           user_id: string
           workspace_id: string
           channel_id?: string | null
+          direct_message_id?: string | null
           file_url: string
           filename: string
+          file_type: string
+          file_size: number
+          metadata?: {
+            content_type: string
+            last_modified: number
+            extension: string
+            original_name: string
+            storage_path: string
+            bucket: string
+          }
           created_at?: string
         }
         Update: {
           file_url?: string
           filename?: string
+          file_type?: string
+          file_size?: number
+          metadata?: {
+            content_type: string
+            last_modified: number
+            extension: string
+            original_name: string
+            storage_path: string
+            bucket: string
+          }
         }
       }
     }

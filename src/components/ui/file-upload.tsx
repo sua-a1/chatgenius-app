@@ -3,13 +3,16 @@
 import { useState, useCallback } from 'react'
 import { Button } from './button'
 import { Paperclip } from 'lucide-react'
-import { supabase } from '@/lib/supabase'
 import { useToast } from '@/hooks/use-toast'
 import { Progress } from './progress'
 import pako from 'pako'
+import { uploadFile, FileMetadata } from '@/lib/storage'
 
 interface FileUploadProps {
   workspaceId: string
+  channelId?: string
+  directMessageId?: string
+  userId: string
   onFilesSelected: (fileUrls: string[]) => void
   onError?: (error: Error) => void
   disabled?: boolean
@@ -20,12 +23,20 @@ interface UploadingFile {
   progress: number
 }
 
-export function FileUpload({ workspaceId, onFilesSelected, onError, disabled }: FileUploadProps) {
+export function FileUpload({ 
+  workspaceId, 
+  channelId,
+  directMessageId,
+  userId,
+  onFilesSelected, 
+  onError, 
+  disabled 
+}: FileUploadProps) {
   const [uploadingFiles, setUploadingFiles] = useState<UploadingFile[]>([])
   const [isUploading, setIsUploading] = useState(false)
   const { toast } = useToast()
 
-  const compressFile = async (file: File): Promise<Blob> => {
+  const compressFile = async (file: File): Promise<File> => {
     // Only compress text-based files and PDFs
     if (!file.type.match(/(text|pdf|doc|docx)/)) {
       return file
@@ -34,43 +45,38 @@ export function FileUpload({ workspaceId, onFilesSelected, onError, disabled }: 
     try {
       const buffer = await file.arrayBuffer()
       const compressed = pako.deflate(new Uint8Array(buffer))
-      return new Blob([compressed], { type: file.type })
+      
+      // Create a new File directly from the compressed data
+      return new File([compressed.buffer], file.name, {
+        type: file.type,
+        lastModified: file.lastModified
+      })
     } catch (error) {
       console.warn('Compression failed, using original file:', error)
       return file
     }
   }
 
-  const uploadFile = useCallback(async (file: File): Promise<string | null> => {
-        const fileExt = file.name.split('.').pop()
-        const fileName = `${workspaceId}/${Math.random().toString(36).slice(2)}.${fileExt}`
-
+  const uploadSingleFile = useCallback(async (file: File): Promise<string | { url: string, metadata: FileMetadata } | null> => {
     try {
       // Compress file if possible
       const compressedFile = await compressFile(file)
 
-      // Upload file with progress tracking
-        const { data, error } = await supabase.storage
-          .from('chat_attachments')
-        .upload(fileName, compressedFile, {
-          cacheControl: '3600',
-          upsert: false,
-          contentType: file.type
-        })
+      // Upload file using our storage utility
+      const result = await uploadFile(compressedFile, 'message-attachment', {
+        workspaceId,
+        channelId,
+        directMessageId,
+        userId
+      })
 
-        if (error) throw error
+      return result
 
-      // Get public URL
-        const { data: { publicUrl } } = supabase.storage
-          .from('chat_attachments')
-          .getPublicUrl(data.path)
-
-      return publicUrl
     } catch (error) {
       console.error('Error uploading file:', error)
       return null
     }
-  }, [workspaceId])
+  }, [workspaceId, channelId, directMessageId, userId])
 
   const uploadFiles = useCallback(async (files: File[]) => {
     if (files.length === 0) return []
@@ -92,7 +98,7 @@ export function FileUpload({ workspaceId, onFilesSelected, onError, disabled }: 
           )
         }, 500)
 
-        return uploadFile(file).then(url => {
+        return uploadSingleFile(file).then(result => {
           clearInterval(interval)
           setUploadingFiles(prev => 
             prev.map(f => 
@@ -101,18 +107,24 @@ export function FileUpload({ workspaceId, onFilesSelected, onError, disabled }: 
                 : f
             )
           )
-          return url
+          return result
         })
       })
 
-      const urls = await Promise.all(uploadPromises)
-      const validUrls = urls.filter((url): url is string => url !== null)
+      const results = await Promise.all(uploadPromises)
+      const validResults = results.filter((result): result is { url: string, metadata: FileMetadata } | string => 
+        result !== null
+      )
 
-      if (validUrls.length > 0) {
-        onFilesSelected(validUrls)
+      if (validResults.length > 0) {
+        // Map results to ensure we always pass a consistent format to onFilesSelected
+        const processedResults = validResults.map(result => 
+          typeof result === 'string' ? result : result.url
+        )
+        onFilesSelected(processedResults)
       }
 
-      if (validUrls.length < files.length) {
+      if (validResults.length < files.length) {
         toast({
           variant: 'destructive',
           title: 'Some files failed to upload',
@@ -120,7 +132,7 @@ export function FileUpload({ workspaceId, onFilesSelected, onError, disabled }: 
         })
       }
 
-      return validUrls
+      return validResults
     } catch (error) {
       console.error('Error uploading files:', error)
       toast({
@@ -136,7 +148,7 @@ export function FileUpload({ workspaceId, onFilesSelected, onError, disabled }: 
       setIsUploading(false)
       setUploadingFiles([])
     }
-  }, [workspaceId, onFilesSelected, onError, toast, uploadFile])
+  }, [onFilesSelected, onError, toast, uploadSingleFile])
 
   const handleFileSelect = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || [])

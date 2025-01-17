@@ -316,3 +316,150 @@
   - [ ] Context filtering rules
   - [ ] Response format customization
   ``` 
+
+## 17. Document-Based RAG Implementation
+
+### Database Schema Extensions
+```sql
+- document_embeddings (
+  id uuid primary key,
+  file_id uuid references files(id),
+  chunk_text text,
+  embedding vector(1536),
+  metadata jsonb,
+  workspace_id uuid references workspaces(id),
+  channel_id uuid references channels(id),
+  created_at timestamptz default now()
+)
+
+- document_assistant_conversations (
+  id uuid primary key,
+  workspace_id uuid references workspaces(id),
+  channel_id uuid references channels(id),
+  user_id uuid references auth.users(id),
+  file_id uuid references files(id),
+  created_at timestamptz default now()
+)
+
+- document_assistant_messages (
+  id uuid primary key,
+  conversation_id uuid references document_assistant_conversations(id),
+  role text check (role in ('user', 'assistant')),
+  content text,
+  created_at timestamptz default now()
+)
+```
+
+### Implementation Tasks
+
+1. File Processing Pipeline
+   - [ ] Create Supabase Edge Function for document processing:
+     ```typescript
+     - Process files from chat_attachments bucket
+     - Extract text based on file type (PDF, DOCX, TXT)
+     - Implement chunking strategy for documents
+     - Generate and store embeddings
+     ```
+   - [ ] Add file type support:
+     ```typescript
+     - PDF processing
+     - DOCX processing
+     - Plain text
+     ```
+   - [ ] Implement automatic processing on file upload:
+     ```typescript
+     - Create database trigger for new file attachments
+     - Queue processing job
+     - Handle failures and retries
+     ```
+
+2. UI Components
+   - [ ] Channel Header Integration:
+     ```typescript
+     - Add "Document Assistant" button
+     - Create document assistant modal/sidebar
+     - Implement conversation UI
+     ```
+   - [ ] File Attachment Enhancement:
+     ```typescript
+     - Add "Ask AI" button next to attachments
+     - Implement automatic summary generation
+     - Show processing status indicators
+     ```
+   - [ ] Conversation Interface:
+     ```typescript
+     - Reuse AI assistant chat components
+     - Add file context display
+     - Show relevant document snippets
+     ```
+
+3. API Endpoints
+   - [ ] Create new routes:
+     ```typescript
+     - POST /api/documents/process - Process new document
+     - POST /api/documents/query - Query documents
+     - GET /api/documents/summary/:fileId - Get file summary
+     - GET /api/documents/conversations - List conversations
+     - DELETE /api/documents/conversations/:id - Delete conversation
+     ```
+
+4. Document Query Pipeline
+   - [ ] Implement semantic search:
+     ```typescript
+     - Create similarity search function
+     - Filter by channel and workspace context
+     - Add file metadata filtering
+     - Implement relevance scoring
+     ```
+   - [ ] Add conversation context:
+     ```typescript
+     - Track conversation history
+     - Include previous queries
+     - Maintain file context
+     ```
+
+5. Security & Access Control
+   - [ ] RLS Policies:
+     ```sql
+     - document_embeddings access based on channel membership
+     - conversation access control
+     - file access verification
+     ```
+   - [ ] Rate Limiting:
+     ```typescript
+     - Per-user query limits
+     - Processing queue management
+     - Storage quotas
+     ```
+
+6. Testing & Monitoring
+   - [ ] Create test suite:
+     ```typescript
+     - File processing pipeline tests
+     - Query accuracy evaluation
+     - UI component tests
+     - End-to-end conversation flow
+     ```
+   - [ ] Add monitoring:
+     ```typescript
+     - Processing success rates
+     - Query performance metrics
+     - Error tracking
+     - Usage analytics
+     ```
+
+7. Documentation
+   - [ ] Technical documentation:
+     ```markdown
+     - File processing pipeline
+     - Supported file types
+     - API endpoints
+     - Configuration options
+     ```
+   - [ ] User documentation:
+     ```markdown
+     - How to use document assistant
+     - File type support
+     - Query best practices
+     - Troubleshooting guide
+     ``` 

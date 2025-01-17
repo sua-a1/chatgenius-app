@@ -101,6 +101,9 @@ export function MessageComposer({
         <div className="mb-4">
           <FileUpload
             workspaceId={workspaceId}
+            channelId={channelId}
+            directMessageId={directMessageId}
+            userId={userId}
             onFilesSelected={(urls) => {
               urls.forEach(url => handleFileUpload(url, url.split('/').pop() || 'unknown'))
             }}

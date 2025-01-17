@@ -14,11 +14,27 @@ interface UploadOptions {
   userId: string
 }
 
+export interface FileMetadata {
+  file_url: string
+  filename: string
+  file_type: string
+  file_size: number
+  metadata: {
+    content_type: string
+    last_modified: number
+    extension: string | undefined
+    original_name: string
+    storage_path: string
+    bucket: string
+    created_at: string
+  }
+}
+
 export async function uploadFile(
   file: File,
   type: FileUploadType,
   options: UploadOptions
-): Promise<string> {
+): Promise<string | { url: string, metadata: FileMetadata }> {
   const supabase = createClient()
   const bucket = getBucketForType(type)
   
@@ -44,22 +60,25 @@ export async function uploadFile(
     .from(bucket)
     .getPublicUrl(filePath)
 
-  // Store file metadata in the files table
-  if (type !== 'avatar') {
-    const { error: dbError } = await supabase
-      .from('files')
-      .insert({
-        user_id: options.userId,
-        workspace_id: options.workspaceId,
-        channel_id: options.channelId,
-        direct_message_id: options.directMessageId,
-        file_url: publicUrl,
-        filename: file.name
-      })
-
-    if (dbError) {
-      throw new Error(`Error storing file metadata: ${dbError.message}`)
+  // For message attachments, return metadata without storing it
+  if (type === 'message-attachment' && options.channelId) {
+    const metadata: FileMetadata = {
+      file_url: publicUrl,
+      filename: file.name,
+      file_type: file.type || getFileTypeFromName(file.name),
+      file_size: file.size,
+      metadata: {
+        content_type: file.type,
+        last_modified: file.lastModified,
+        extension: file.name.split('.').pop()?.toLowerCase(),
+        original_name: file.name,
+        storage_path: filePath,
+        bucket: bucket,
+        created_at: new Date().toISOString()
+      }
     }
+
+    return { url: publicUrl, metadata }
   }
 
   return publicUrl
@@ -88,8 +107,8 @@ export async function deleteFile(
     throw new Error(`Error deleting file: ${error.message}`)
   }
 
-  // Delete metadata if it's not an avatar
-  if (type !== 'avatar') {
+  // Delete metadata only for message attachments
+  if (type === 'message-attachment') {
     const { error: dbError } = await supabase
       .from('files')
       .delete()
@@ -135,4 +154,33 @@ function getFilePath(
     default:
       throw new Error('Invalid file type')
   }
+}
+
+// Helper function to determine file type from filename if MIME type is not available
+function getFileTypeFromName(filename: string): string {
+  const ext = filename.split('.').pop()?.toLowerCase() || ''
+  const mimeTypes: Record<string, string> = {
+    // Images
+    'jpg': 'image/jpeg',
+    'jpeg': 'image/jpeg',
+    'png': 'image/png',
+    'gif': 'image/gif',
+    'webp': 'image/webp',
+    // Documents
+    'pdf': 'application/pdf',
+    'doc': 'application/msword',
+    'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'txt': 'text/plain',
+    // Audio
+    'mp3': 'audio/mpeg',
+    'wav': 'audio/wav',
+    // Video
+    'mp4': 'video/mp4',
+    'webm': 'video/webm',
+    // Other
+    'json': 'application/json',
+    'xml': 'application/xml'
+  }
+  
+  return mimeTypes[ext] || 'application/octet-stream'
 } 

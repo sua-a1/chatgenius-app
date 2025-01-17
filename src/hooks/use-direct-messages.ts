@@ -5,6 +5,7 @@ import { useAuth } from '@/contexts/auth-context'
 import { supabase } from '@/lib/supabase'
 import { useToast } from './use-toast'
 import { useUserStatus } from '@/contexts/user-status-context'
+import { FileMetadata } from '@/lib/storage'
 
 interface DirectMessageReaction {
   id: string
@@ -561,25 +562,30 @@ export function useDirectMessages(workspaceId: string | undefined, selectedUserI
     }
   }
 
-  const sendMessage = async (content: string, attachments?: string[]) => {
+  const sendMessage = async (content: string, attachments?: Array<string | { url: string, metadata: FileMetadata }>) => {
     if (!profile?.id || !selectedUserId || !workspaceId) return false
 
     try {
       console.log('DM Hook: Sending message:', { content, receiverId: selectedUserId })
-      const { data, error } = await supabase.rpc('send_direct_message', {
+      
+      // Extract URLs from attachments - for DMs we only need the URLs
+      const attachmentUrls = attachments?.map(att => typeof att === 'string' ? att : att.url).join(',')
+      
+      // Send the message
+      const { data: messageId, error } = await supabase.rpc('send_direct_message', {
         p_content: content,
         p_receiver_id: selectedUserId,
         p_workspace_id: workspaceId,
-        p_attachments: attachments ? attachments.join(',') : null
+        p_attachments: attachmentUrls
       })
 
       if (error) throw error
 
       // Optimistically add the message to the UI and track its ID
-      if (data) {
-        sentMessageIds.current.add(data)
+      if (messageId) {
+        sentMessageIds.current.add(messageId)
         const newMessage: DirectMessage = {
-          id: data,
+          id: messageId,
           content: content,
           created_at: new Date().toISOString(),
           sender_id: profile.id,
@@ -595,9 +601,9 @@ export function useDirectMessages(workspaceId: string | undefined, selectedUserI
             avatar_url: null
           },
           reactions: [],
-          attachments: attachments ? attachments.map(url => ({
-            url,
-            filename: url.split('/').pop() || 'unknown'
+          attachments: attachments ? attachments.map(att => ({
+            url: typeof att === 'string' ? att : att.url,
+            filename: typeof att === 'string' ? att.split('/').pop() || 'unknown' : att.metadata.filename
           })) : []
         }
         setMessages(prev => [...prev, newMessage])
