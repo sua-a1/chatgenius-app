@@ -125,19 +125,18 @@
   - [x] `AITypingIndicator` - Loading state
   - [x] `AIConversationList` - History view
 - [ ] Add state management:
-  - [ ] Conversation tracking:
+  - [x] Conversation tracking:
     ```typescript
-    - [ ] Implement conversation persistence service
-    - [ ] Add conversation metadata (title, last message, timestamp)
-    - [ ] Handle conversation lifecycle (create, update, delete)
-    - [ ] Add workspace-specific conversation filtering
+    - [x] Implement conversation persistence service
+    - [x] Add conversation metadata (title, last message, timestamp)
+    - [x] Handle conversation lifecycle (create, update, delete)
+    - [x] Add workspace-specific conversation filtering
     ```
   - [ ] Message history:
     ```typescript
     - [ ] Implement message history loading on conversation open
     - [ ] Add pagination for long conversations
-    - [ ] Implement message deletion (single and bulk)
-    - [ ] Add message status tracking (sent, delivered, error)
+    - [ ] Implement message deletion ( bulk)
     ```
   - [ ] Loading states:
     ```typescript
@@ -165,27 +164,7 @@
     - [ ] Show conversation metadata (created, updated dates)
     ```
 
-## 9. Testing
-- [ ] Unit tests:
-  - [ ] Embedding generation
-  - [ ] Vector search accuracy
-  - [ ] RLS policy validation
-- [ ] Integration tests:
-  - [ ] End-to-end query flow
-  - [ ] Workspace isolation
-  - [ ] Error scenarios
-
-## 10. Monitoring
-- [ ] Set up Supabase monitoring:
-  - [ ] Query performance metrics
-  - [ ] Edge function logs
-  - [ ] Error tracking
-- [ ] Add usage analytics:
-  - [ ] Queries per workspace
-  - [ ] Response times
-  - [ ] Error rates
-
-## 11. Documentation
+## 9. Documentation
 - [ ] Technical documentation:
   - [ ] Vector setup guide
   - [ ] API endpoints
@@ -194,13 +173,7 @@
   - [ ] AI feature usage guide
   - [ ] Query best practices
 
-## 12. Security Review
-- [ ] Audit RLS policies
-- [ ] Review API key handling
-- [ ] Test workspace isolation
-- [ ] Validate rate limiting 
-
-## 13. Enhanced Prompting & Context Management
+## 10. Enhanced Prompting & Context Management
 - [x] Dynamic Instruction Selection
   ```typescript
   - [x] Create instruction sets module:
@@ -261,7 +234,7 @@
     - [x] General assistance 
     ```
 
-## 14. Implementation Plan
+## 11. Implementation Plan
 1. Phase 1: Query Analysis & Classification
    - [x] Implement message analyzer service
    - [x] Build query type classifier
@@ -286,23 +259,7 @@
    - [x] Implement format validation
    - [x] Test end-to-end pipeline
 
-## 15. Testing & Validation
-- [ ] Create test suites:
-  ```typescript
-  - [ ] Query classification accuracy
-  - [ ] Context relevance metrics
-  - [ ] Response quality evaluation
-  - [ ] End-to-end performance tests
-  ```
-- [ ] Implement monitoring:
-  ```typescript
-  - [ ] Query analysis metrics
-  - [ ] Context retrieval performance
-  - [ ] Response generation timing
-  - [ ] Error rate tracking
-  ```
-
-## 16. Documentation Updates
+## 12. Documentation Updates
 - [ ] Technical documentation:
   ```typescript
   - [ ] Query analysis system
