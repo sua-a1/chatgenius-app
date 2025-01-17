@@ -8,7 +8,6 @@ Tech Stack: Frontend: Next.js + shadcn/ui, Backend: Supabase and PostgreSQL. Key
 
 Project Structure Root Directory: Contains the main configuration files and documentation. 
 
-
 /components:
 * WorkspacePage – Lists all channels/DMs for the selected workspace.
 
