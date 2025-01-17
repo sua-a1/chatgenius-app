@@ -130,3 +130,46 @@ CREATE OR REPLACE FUNCTION search_messages()
 - Improved accuracy of message retrieval for user-specific queries
 - More reliable handling of user context across different query types
 - Better semantic search results for user-specific content 
+
+## Message Embeddings Fixes (2024-03-23)
+
+### 1. Constraint and Foreign Key Updates
+- Fixed pending_embeddings foreign key constraint with CASCADE delete
+- Updated message_embeddings foreign key to use CASCADE delete
+- Implemented proper soft delete handling in message delete trigger
+- Added workspace_id column to message_embeddings with proper constraints
+
+### 2. Race Condition and Versioning Fixes
+- Implemented explicit row locking to prevent concurrent updates
+- Added transaction handling for atomic operations
+- Created new trigger to ensure single latest version
+- Fixed unique constraint violations with proper error handling
+- Added deferred constraint handling for better performance
+
+### 3. Trigger Function Improvements
+- Created new `ensure_single_latest_version` trigger function
+- Updated `handle_message_update` function with:
+  - Proper version tracking
+  - Atomic operations
+  - Better error handling
+  - Workspace ID propagation
+  - Metadata preservation
+
+### 4. Performance Optimizations
+- Added proper indexes for workspace_id and latest version queries
+- Implemented optimistic locking strategy
+- Added proper transaction isolation
+- Improved error logging and tracking
+
+### 5. Data Integrity Improvements
+- Added function_logs table for better debugging
+- Updated reply count functions for accuracy
+- Improved thread reply handling
+- Enhanced metadata tracking for message versions
+
+### Impact
+- Fixed issues with duplicate embeddings
+- Resolved race conditions in concurrent updates
+- Improved performance of embedding updates
+- Enhanced data consistency and integrity
+- Better error tracking and debugging capabilities 

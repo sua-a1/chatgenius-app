@@ -222,7 +222,10 @@ export default function WorkspacePage({ workspace, workspaces, onOpenProfileSett
           <div className="fixed inset-4 bg-background border rounded-lg shadow-lg overflow-hidden">
             <div className="flex flex-col h-full">
               <div className="flex items-center justify-between p-4 border-b">
-                <h2 className="text-lg font-semibold">AI Assistant</h2>
+                <div className="flex items-center gap-2">
+                  <Bot className="h-5 w-5 text-gray-500" />
+                  <h2 className="text-lg font-semibold">AI Assistant</h2>
+                </div>
                 <Button
                   variant="ghost"
                   size="icon"

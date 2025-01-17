@@ -125,14 +125,45 @@
   - [x] `AITypingIndicator` - Loading state
   - [x] `AIConversationList` - History view
 - [ ] Add state management:
-  - [ ] Conversation tracking
-  - [ ] Message history
-  - [ ] Loading states
-  - [ ] Error handling
-- [ ] Implement real-time updates:
-  - [ ] Message streaming
-  - [ ] Typing indicators
-  - [ ] Error states
+  - [ ] Conversation tracking:
+    ```typescript
+    - [ ] Implement conversation persistence service
+    - [ ] Add conversation metadata (title, last message, timestamp)
+    - [ ] Handle conversation lifecycle (create, update, delete)
+    - [ ] Add workspace-specific conversation filtering
+    ```
+  - [ ] Message history:
+    ```typescript
+    - [ ] Implement message history loading on conversation open
+    - [ ] Add pagination for long conversations
+    - [ ] Implement message deletion (single and bulk)
+    - [ ] Add message status tracking (sent, delivered, error)
+    ```
+  - [ ] Loading states:
+    ```typescript
+    - [ ] Add loading indicators for history fetch
+    - [ ] Handle message sending states
+    - [ ] Show error states with retry options
+    ```
+  - [ ] Error handling:
+    ```typescript
+    - [ ] Implement error boundaries
+    - [ ] Add retry mechanisms for failed operations
+    - [ ] Show user-friendly error messages
+    ```
+  - [ ] Persistence:
+    ```typescript
+    - [ ] Store conversations in Supabase
+    - [ ] Implement conversation cleanup policies
+    - [ ] Add conversation export functionality
+    ```
+  - [ ] UI/UX enhancements:
+    ```typescript
+    - [ ] Add conversation list sidebar
+    - [ ] Implement conversation search
+    - [ ] Add conversation delete confirmation
+    - [ ] Show conversation metadata (created, updated dates)
+    ```
 
 ## 9. Testing
 - [ ] Unit tests:
@@ -232,28 +263,28 @@
 
 ## 14. Implementation Plan
 1. Phase 1: Query Analysis & Classification
-   - [ ] Implement message analyzer service
-   - [ ] Build query type classifier
-   - [ ] Add entity extraction
-   - [ ] Test with sample queries
+   - [x] Implement message analyzer service
+   - [x] Build query type classifier
+   - [x] Add entity extraction
+   - [x] Test with sample queries
 
 2. Phase 2: Instruction Management
-   - [ ] Create instruction sets
-   - [ ] Build instruction selection logic
-   - [ ] Implement templating system
-   - [ ] Test instruction composition
+   - [x] Create instruction sets
+   - [x] Build instruction selection logic
+   - [x] Implement templating system
+   - [x] Test instruction composition
 
 3. Phase 3: Context Enhancement
-   - [ ] Enhance vector search with metadata
-   - [ ] Implement tiered retrieval
-   - [ ] Add context scoring
-   - [ ] Test context relevance
+   - [x] Enhance vector search with metadata
+   - [x] Implement tiered retrieval
+   - [x] Add context scoring
+   - [x] Test context relevance
 
 4. Phase 4: Response Generation
-   - [ ] Update base prompts
-   - [ ] Add response templates
-   - [ ] Implement format validation
-   - [ ] Test end-to-end pipeline
+   - [x] Update base prompts
+   - [x] Add response templates
+   - [x] Implement format validation
+   - [x] Test end-to-end pipeline
 
 ## 15. Testing & Validation
 - [ ] Create test suites:
