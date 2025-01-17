@@ -2,7 +2,10 @@ export enum QueryType {
   WORKSPACE_INFO = 'workspace_info',
   CHANNEL_CONTEXT = 'channel_context',
   USER_CONTEXT = 'user_context',
-  GENERAL_ASSISTANCE = 'general_assistance'
+  GENERAL_ASSISTANCE = 'general_assistance',
+  COUNT_QUERY = 'count_query',
+  STATISTICAL_QUERY = 'statistical_query',
+  SUMMARY_QUERY = 'summary_query'
 }
 
 export interface MessageMetadata {
@@ -41,6 +44,11 @@ export interface QueryAnalysis {
     users?: string[];
     timeframe?: string;
     query?: string;
+    aggregation?: {
+      operation: 'count' | 'average' | 'most' | 'least';
+      target: 'messages' | 'reactions' | 'files';
+      groupBy?: 'user' | 'channel' | 'time';
+    };
   };
   contextRequirements?: {
     needsWorkspaceContext: boolean;
@@ -48,6 +56,8 @@ export interface QueryAnalysis {
     needsUserContext: boolean;
     needsTimeContext: boolean;
     needsRecentMessages: boolean;
+    needsAggregation: boolean;
+    needsStatistics: boolean;
   };
 }
 

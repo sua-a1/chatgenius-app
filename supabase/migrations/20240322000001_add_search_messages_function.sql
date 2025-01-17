@@ -37,14 +37,17 @@ begin
   -- Extract username if provided
   target_username := filter->>'username';
 
-  -- Verify workspace access
-  if not exists (
-    select 1 
-    from workspace_memberships wm
-    where wm.workspace_id = workspace_id_param
-    and wm.user_id = auth.uid()
-  ) then
-    raise exception 'Access denied to workspace';
+  -- Skip workspace access check for service role
+  if auth.role() <> 'service_role' then
+    -- Verify workspace access for current user (auth.uid())
+    if not exists (
+      select 1 
+      from workspace_memberships wm
+      where wm.workspace_id = workspace_id_param
+      and wm.user_id = auth.uid()
+    ) then
+      raise exception 'Access denied to workspace';
+    end if;
   end if;
 
   -- Determine effective limit based on whether it's a channel or user query
@@ -93,19 +96,22 @@ begin
     where
       -- Enforce workspace filter
       c.workspace_id = workspace_id_param
-      -- Check channel access
-      and exists (
-        select 1 
-        from workspace_memberships wm
-        where wm.workspace_id = c.workspace_id
-        and wm.user_id = auth.uid()
-        and (
-          not c.is_private 
-          or exists (
-            select 1 
-            from channel_memberships cm
-            where cm.channel_id = c.id
-            and cm.user_id = auth.uid()
+      -- Skip channel access check for service role
+      and (
+        auth.role() = 'service_role'
+        or exists (
+          select 1 
+          from workspace_memberships wm
+          where wm.workspace_id = c.workspace_id
+          and wm.user_id = auth.uid()
+          and (
+            not c.is_private 
+            or exists (
+              select 1 
+              from channel_memberships cm
+              where cm.channel_id = c.id
+              and cm.user_id = auth.uid()
+            )
           )
         )
       )

@@ -88,6 +88,59 @@ You should:
   ]
 };
 
+const COUNT_QUERY_INSTRUCTIONS = {
+  role: 'Message Counter',
+  base: `${BASE_ROLE}
+Your focus is on providing accurate counts and numerical analysis of messages and interactions.
+You should:
+- Provide exact counts when available
+- Include relevant timeframe context
+- Specify any filtering criteria used (channel, user, time period)
+- Format numbers clearly and consistently`,
+  formatInstructions: [FORMAT_INSTRUCTIONS],
+  contextInstructions: [
+    'Always specify the time period for the count',
+    'Include the search criteria used (channel, user, etc.)',
+    'If count is zero, explain possible reasons why'
+  ]
+};
+
+const STATISTICAL_QUERY_INSTRUCTIONS = {
+  role: 'Activity Analyst',
+  base: `${BASE_ROLE}
+Your focus is on analyzing and explaining user activity patterns and statistics.
+You should:
+- Present statistics with clear context
+- Explain relative activity levels
+- Highlight notable patterns or trends
+- Use specific examples to support findings`,
+  formatInstructions: [FORMAT_INSTRUCTIONS],
+  contextInstructions: [
+    'Always provide context for statistics',
+    'Compare activity levels when relevant',
+    'Include specific message examples to support findings',
+    'Explain any limitations in the analysis'
+  ]
+};
+
+const SUMMARY_QUERY_INSTRUCTIONS = {
+  role: 'Discussion Summarizer',
+  base: `${BASE_ROLE}
+Your focus is on providing clear, concise summaries of discussions and activities.
+You should:
+- Identify main discussion topics
+- Highlight key decisions or conclusions
+- Note significant participant contributions
+- Maintain chronological clarity`,
+  formatInstructions: [FORMAT_INSTRUCTIONS],
+  contextInstructions: [
+    'Focus on the most important points',
+    'Maintain chronological order when relevant',
+    'Include participant context when significant',
+    'Highlight any decisions or action items'
+  ]
+};
+
 export function getInstructionSet(type: QueryType): InstructionSet {
   switch (type) {
     case QueryType.WORKSPACE_INFO:
@@ -96,6 +149,12 @@ export function getInstructionSet(type: QueryType): InstructionSet {
       return CHANNEL_INSTRUCTIONS;
     case QueryType.USER_CONTEXT:
       return USER_CONTEXT_INSTRUCTIONS;
+    case QueryType.COUNT_QUERY:
+      return COUNT_QUERY_INSTRUCTIONS;
+    case QueryType.STATISTICAL_QUERY:
+      return STATISTICAL_QUERY_INSTRUCTIONS;
+    case QueryType.SUMMARY_QUERY:
+      return SUMMARY_QUERY_INSTRUCTIONS;
     default:
       return GENERAL_ASSISTANCE_INSTRUCTIONS;
   }

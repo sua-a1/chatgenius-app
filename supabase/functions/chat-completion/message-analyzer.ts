@@ -22,6 +22,53 @@ const RECENT_MESSAGE_PATTERNS = [
   /recent messages?/i
 ];
 
+const COUNT_PATTERNS = [
+  /how many/i,
+  /number of/i,
+  /count of/i,
+  /total/i
+];
+
+const STATISTICAL_PATTERNS = [
+  /most active/i,
+  /least active/i,
+  /average/i,
+  /who (has sent|sent|wrote|posted) the most/i,
+  /who (has been|is|was) most active/i
+];
+
+const SUMMARY_PATTERNS = [
+  /summarize/i,
+  /summary of/i,
+  /what (has been|was) discussed/i,
+  /what (have|did) people talk about/i
+];
+
+function analyzeAggregation(message: string): QueryAnalysis['entities']['aggregation'] | undefined {
+  // Check for count operations
+  if (COUNT_PATTERNS.some(pattern => pattern.test(message))) {
+    const target = message.includes('reaction') ? 'reactions' :
+                  message.includes('file') ? 'files' : 'messages';
+    
+    return {
+      operation: 'count',
+      target,
+      groupBy: message.includes('by') ? 'user' : undefined
+    };
+  }
+
+  // Check for statistical operations
+  if (STATISTICAL_PATTERNS.some(pattern => pattern.test(message))) {
+    return {
+      operation: message.includes('least') ? 'least' : 'most',
+      target: 'messages',
+      groupBy: 'user'
+    };
+  }
+
+  return undefined;
+}
+
 export function analyzeQuery(message: string): QueryAnalysis {
   // Extract channel mentions
   const channelMatches = message.match(/channel\s+(?:"|'|#)?([^"'#\n]+)(?:"|')?/gi);
@@ -37,33 +84,22 @@ export function analyzeQuery(message: string): QueryAnalysis {
   // Check if this is a recent message query
   const isRecentMessageQuery = RECENT_MESSAGE_PATTERNS.some(pattern => pattern.test(message));
 
-  // Determine query type
+  // Determine query type and aggregation
   let type = QueryType.GENERAL_ASSISTANCE;
+  const aggregation = analyzeAggregation(message);
 
-  // Check for user context patterns first
-  if (USER_CONTEXT_PATTERNS.some(pattern => pattern.test(message))) {
+  if (aggregation?.operation === 'count') {
+    type = QueryType.COUNT_QUERY;
+  } else if (aggregation?.operation === 'most' || aggregation?.operation === 'least') {
+    type = QueryType.STATISTICAL_QUERY;
+  } else if (SUMMARY_PATTERNS.some(pattern => pattern.test(message))) {
+    type = QueryType.SUMMARY_QUERY;
+  } else if (USER_CONTEXT_PATTERNS.some(pattern => pattern.test(message))) {
     type = QueryType.USER_CONTEXT;
-  }
-  // Then check other patterns
-  else if (/\b(workspace|space)\b/i.test(message)) {
+  } else if (/\b(workspace|space)\b/i.test(message)) {
     type = QueryType.WORKSPACE_INFO;
-  }
-  else if (channels.length > 0) {
-    // Only set USER_CONTEXT if explicitly asking about user messages in a channel
-    if (users.length > 0 && (
-      message.toLowerCase().includes('sent') ||
-      message.toLowerCase().includes('written') ||
-      message.toLowerCase().includes('posted') ||
-      message.toLowerCase().includes('messages from') ||
-      message.toLowerCase().includes('messages by')
-    )) {
-      type = QueryType.USER_CONTEXT;
-    } else {
-      type = QueryType.CHANNEL_CONTEXT;
-    }
-  }
-  else if (users.length > 0 && !message.toLowerCase().includes('i') && !message.toLowerCase().includes('my')) {
-    type = QueryType.USER_CONTEXT;
+  } else if (channels.length > 0) {
+    type = QueryType.CHANNEL_CONTEXT;
   }
 
   return {
@@ -71,14 +107,17 @@ export function analyzeQuery(message: string): QueryAnalysis {
     entities: {
       channels,
       users,
-      timeframe: extractTimeframe(message)
+      timeframe: extractTimeframe(message),
+      aggregation
     },
     contextRequirements: {
       needsWorkspaceContext: type === QueryType.WORKSPACE_INFO,
-      needsChannelContext: type === QueryType.CHANNEL_CONTEXT,
-      needsUserContext: type === QueryType.USER_CONTEXT,
+      needsChannelContext: type === QueryType.CHANNEL_CONTEXT || channels.length > 0,
+      needsUserContext: type === QueryType.USER_CONTEXT || users.length > 0,
       needsTimeContext: !!extractTimeframe(message),
-      needsRecentMessages: isRecentMessageQuery
+      needsRecentMessages: RECENT_MESSAGE_PATTERNS.some(pattern => pattern.test(message)),
+      needsAggregation: type === QueryType.COUNT_QUERY,
+      needsStatistics: type === QueryType.STATISTICAL_QUERY
     }
   };
 }

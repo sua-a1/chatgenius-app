@@ -1,7 +1,7 @@
 import { serve, createClient, OpenAI, User, UserMapEntry } from './deps.ts';
 import { analyzeQuery } from './message-analyzer.ts';
 import { assembleContext } from './context-assembly.ts';
-import { composeInstructions } from './instruction-sets.ts';
+import { composeInstructions, getInstructionSet } from './instruction-sets.ts';
 import { MessageContext, MessageMetadata, QueryType } from './types.ts';
 
 interface ChatMessage {
@@ -19,6 +19,52 @@ interface ChatRequest {
   };
   context?: MessageContext[];
   channel_name?: string;
+}
+
+interface AggregatedResult {
+  count?: number;
+  statistics?: {
+    user_id: string;
+    username: string;
+    count: number;
+  }[];
+}
+
+function formatAggregatedResult(result: AggregatedResult, queryType: QueryType, channel_name?: string, timeframe?: string): string {
+  const channelContext = channel_name ? ` in channel #${channel_name}` : '';
+  const timeContext = timeframe ? ` during ${timeframe}` : '';
+
+  if (queryType === QueryType.COUNT_QUERY) {
+    if (typeof result.count !== 'number') {
+      return 'Unable to determine message count due to an error.';
+    }
+    if (result.count === 0) {
+      return `No messages found${channelContext}${timeContext}.`;
+    }
+    return `Based on the search criteria, I found exactly ${result.count} message(s)${channelContext}${timeContext}.`;
+  }
+
+  if (queryType === QueryType.STATISTICAL_QUERY) {
+    if (!result.statistics) {
+      return 'Unable to retrieve activity statistics due to an error.';
+    }
+    if (result.statistics.length === 0) {
+      return `No user activity found${channelContext}${timeContext}.`;
+    }
+
+    const formattedStats = result.statistics
+      .filter(stat => stat.username && stat.count > 0)
+      .map(stat => `@${stat.username}: ${stat.count} message(s)`)
+      .join('\n');
+
+    if (!formattedStats) {
+      return `No valid user activity statistics found${channelContext}${timeContext}.`;
+    }
+
+    return `Here are the user activity statistics${channelContext}${timeContext}:\n\n${formattedStats}`;
+  }
+
+  return 'Unsupported query type or invalid result format.';
 }
 
 // Initialize OpenAI client for each request
@@ -111,19 +157,19 @@ function formatContextMessages(relevantMessages: MessageContext[]): string {
       return 'No valid messages found in the context. All messages were filtered out due to being deleted, outdated versions, or having invalid content.';
     }
 
-    // Group messages by day
-    const messagesByDay = sortedMessages.reduce((acc, msg) => {
-      const date = new Date(msg.created_at).toLocaleDateString();
-      if (!acc[date]) acc[date] = [];
-      acc[date].push(msg);
-      return acc;
-    }, {} as Record<string, MessageContext[]>);
+  // Group messages by day
+  const messagesByDay = sortedMessages.reduce((acc, msg) => {
+    const date = new Date(msg.created_at).toLocaleDateString();
+    if (!acc[date]) acc[date] = [];
+    acc[date].push(msg);
+    return acc;
+  }, {} as Record<string, MessageContext[]>);
 
-    // Format messages by day
+  // Format messages by day
     const formattedDays = Object.entries(messagesByDay).map(([date, messages]) => {
-      const formattedMessages = messages.map(msg => {
-        const time = new Date(msg.created_at).toLocaleTimeString();
-        const channelInfo = msg.channel_name ? ` in #${msg.channel_name}` : '';
+    const formattedMessages = messages.map(msg => {
+      const time = new Date(msg.created_at).toLocaleTimeString();
+      const channelInfo = msg.channel_name ? ` in #${msg.channel_name}` : '';
         
         // Handle user information carefully
         let userInfo = '@unknown_user';
@@ -150,7 +196,7 @@ function formatContextMessages(relevantMessages: MessageContext[]): string {
       .filter(Boolean) // Remove null entries
       .join('\n');
 
-      return `=== ${date} ===\n${formattedMessages}`;
+    return `=== ${date} ===\n${formattedMessages}`;
     });
 
     const result = formattedDays.join('\n\n');
@@ -227,7 +273,7 @@ Remember: These formatting rules are MANDATORY for EVERY single message referenc
   return basePrompt;
 }
 
-async function enrichContextWithMetadata(messages: any[], workspace_id: string): Promise<MessageContext[]> {
+export async function enrichContextWithMetadata(messages: any[], workspace_id: string): Promise<MessageContext[]> {
   try {
     console.log('Enriching context with metadata. Message count:', messages.length);
     
@@ -261,8 +307,7 @@ async function enrichContextWithMetadata(messages: any[], workspace_id: string):
       .from('channels')
       .select('id, name')
       .in('id', channelIds)
-      .eq('workspace_id', workspace_id)
-      .eq('is_deleted', false);
+      .eq('workspace_id', workspace_id);
     
     if (channelsError) {
       console.error('Error fetching channels:', channelsError);
@@ -361,175 +406,123 @@ async function getMessageCount(channelId: string): Promise<number> {
 
 async function handleChatRequest(req: ChatRequest): Promise<Response> {
   try {
-    const { message, workspace_id, user_id, user, context = [], channel_name } = req;
+    const { message, workspace_id, user_id, user, channel_name } = req;
 
-    // Log the full request structure for debugging
-    console.log('Chat request received:', {
-      messageLength: message?.length,
-      workspaceId: workspace_id,
-      userId: user_id,
-      username: user?.username,
-      contextLength: context?.length,
-      channelName: channel_name,
-      firstContextMessage: context?.[0] ? {
-        content: context[0].content?.slice(0, 100),
-        created_at: context[0].created_at,
-        channel_name: context[0].channel_name,
-        user: context[0].user
-      } : null
+    // Analyze the query
+    const analysis = analyzeQuery(message);
+    console.log('Query analysis:', {
+      type: analysis.type,
+      entities: analysis.entities,
+      contextRequirements: analysis.contextRequirements
     });
-
-    // Validate required fields
-    if (!message?.trim()) {
-      throw new Error('Message content is required');
-    }
-    if (!workspace_id) {
-      throw new Error('Workspace ID is required');
-    }
-    if (!user_id) {
-      throw new Error('User ID is required');
-    }
-
-    // Ensure context is an array and validate messages
-    const validContext = (Array.isArray(context) ? context : []).filter(msg => {
-      const isValid = msg?.content && msg?.created_at && msg?.is_latest !== false && msg?.is_deleted !== true;
-      if (!isValid) {
-        console.warn('Invalid context message:', {
-          content: !!msg?.content,
-          created_at: !!msg?.created_at,
-          is_latest: msg?.is_latest,
-          is_deleted: msg?.is_deleted
-        });
-      }
-      return isValid;
-    });
-
-    // Log context validation results
-    console.log('Context validation:', {
-      originalCount: context?.length || 0,
-      validCount: validContext.length,
-      invalidCount: (context?.length || 0) - validContext.length
-    });
-
-    // Format context messages
-    const formattedContext = formatContextMessages(validContext);
     
-    // Create system prompt
-    const systemPrompt = createSystemPrompt(
-      'Current workspace context',
-      formattedContext,
-      channel_name,
-      user?.username,
-      user_id
+    // Get relevant context
+    const contextResult = await assembleContext(
+      message,
+      workspace_id,
+      user_id,
+      channel_name
     );
 
-    // Log message preparation
-    console.log('Message preparation:', {
-      systemPromptLength: systemPrompt.length,
-      userMessageLength: message.trim().length,
-      formattedContextLength: formattedContext.length
-    });
-
-    // Initialize OpenAI client
-    const openai = await getOpenAIClient();
-
-    try {
-      // Log OpenAI request
-      console.log('Sending request to OpenAI:', {
-        model: 'gpt-4-1106-preview',
-        messageCount: 2,
-        totalLength: systemPrompt.length + message.length
-      });
-
-      const completion = await openai.chat.completions.create({
-        model: 'gpt-4-1106-preview',
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: message.trim().slice(0, 4000) }
-        ],
-        temperature: 0.7,
-        max_tokens: 1000,
-        top_p: 1,
-        frequency_penalty: 0,
-        presence_penalty: 0
-      });
-
-      // Validate completion response
-      if (!completion?.choices?.[0]?.message?.content) {
-        console.error('Invalid completion response:', completion);
-        throw new Error('No response content received from OpenAI');
-      }
-
-      // Log successful completion
-      console.log('OpenAI completion successful:', {
-        responseLength: completion.choices[0].message.content.length,
-        model: completion.model,
-        totalTokens: completion.usage?.total_tokens
-      });
-
+    // Handle aggregated results differently
+    if (analysis.type === QueryType.COUNT_QUERY || analysis.type === QueryType.STATISTICAL_QUERY) {
+      const aggregatedResult = contextResult as AggregatedResult;
+      const formattedResult = formatAggregatedResult(
+        aggregatedResult, 
+        analysis.type,
+        channel_name,
+        analysis.entities.timeframe
+      );
+      
       return new Response(
         JSON.stringify({
-          message: completion.choices[0].message.content,
+          message: formattedResult,
           metadata: {
-            model: completion.model,
-            total_tokens: completion.usage?.total_tokens,
-            context_messages: validContext.length
+            queryType: analysis.type,
+            aggregatedResult,
+            analysis: {
+              entities: analysis.entities,
+              contextRequirements: analysis.contextRequirements
+            }
           }
         }),
-        { 
-          headers: { 
-            'Content-Type': 'application/json',
-            'Access-Control-Allow-Origin': '*'
-          } 
-        }
+        { headers: { 'Content-Type': 'application/json' } }
       );
-
-    } catch (error: any) {
-      // Log OpenAI-specific error details
-      console.error('OpenAI API error:', {
-        name: error.name,
-        message: error.message,
-        type: error.type,
-        code: error.code,
-        status: error.status,
-        stack: Deno.env.get('DENO_ENV') === 'development' ? error.stack : undefined,
-        response: error.response?.data
-      });
-
-      throw error;
     }
-  } catch (error: any) {
-    // Log the full error details
-    console.error('Chat completion error:', {
-      name: error.name,
-      message: error.message,
-      type: error.type,
-      code: error.code,
-      status: error.status,
-      stack: Deno.env.get('DENO_ENV') === 'development' ? error.stack : undefined
+
+    // For other query types, proceed with normal chat completion
+    const openai = await getOpenAIClient();
+    
+    // Get appropriate instruction set and compose system prompt
+    const instructionSet = getInstructionSet(analysis.type);
+    const formattedContext = Array.isArray(contextResult) ? 
+      formatContextMessages(contextResult) : 
+      'No message context available.';
+
+    // Build workspace context from instruction set
+    const workspaceContext = [
+      instructionSet.base,
+      ...(instructionSet.contextInstructions || []),
+      ...(analysis.contextRequirements?.needsTimeContext ? ['Consider the specified timeframe when providing context'] : []),
+      ...(analysis.contextRequirements?.needsUserContext ? ['Focus on user-specific interactions and history'] : []),
+      ...(analysis.contextRequirements?.needsChannelContext ? ['Consider channel-specific context and discussions'] : [])
+    ].join('\n\n');
+
+    const messages: ChatMessage[] = [
+      {
+        role: 'system',
+        content: createSystemPrompt(
+          workspaceContext,
+          formattedContext,
+          channel_name,
+          user?.username,
+          user_id
+        )
+      },
+      {
+        role: 'user',
+        content: message
+      }
+    ];
+
+    console.log('Sending chat completion request:', {
+      queryType: analysis.type,
+      contextLength: formattedContext.length,
+      hasUserContext: !!user,
+      hasChannelContext: !!channel_name
+    });
+
+    // Get chat completion
+    const completion = await openai.chat.completions.create({
+      model: 'gpt-3.5-turbo',
+      messages,
+      temperature: 0.7,
+      max_tokens: 1000
     });
 
     return new Response(
       JSON.stringify({
-        error: true,
-        message: 'Failed to generate response',
-        details: Deno.env.get('DENO_ENV') === 'development' ? {
-          type: error.type || error.name,
-          message: error.message,
-          stack: error.stack,
-          code: error.code,
-          status: error.status
-        } : {
-          message: error.message
+        message: completion.choices[0].message.content,
+        metadata: {
+          queryType: analysis.type,
+          messageCount: Array.isArray(contextResult) ? contextResult.length : 0,
+          analysis: {
+            entities: analysis.entities,
+            contextRequirements: analysis.contextRequirements
+          }
         }
       }),
-      { 
-        status: error.status || 500,
-        headers: { 
-          'Content-Type': 'application/json',
-          'Access-Control-Allow-Origin': '*'
-        }
-      }
+      { headers: { 'Content-Type': 'application/json' } }
+    );
+
+  } catch (error) {
+    console.error('Error in chat completion:', error);
+    return new Response(
+      JSON.stringify({
+        error: 'Failed to process chat request',
+        details: error.message
+      }),
+      { status: 500, headers: { 'Content-Type': 'application/json' } }
     );
   }
 }
