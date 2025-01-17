@@ -19,22 +19,25 @@ serve(async (req) => {
 
     const supabase = createClient(supabaseUrl, supabaseKey)
 
-    // Get pending messages
-    console.log('Fetching pending messages...')
+    // Get pending messages with workspace_id from channels
     const { data: pendingMessages, error: fetchError } = await supabase
       .from('pending_embeddings')
       .select(`
         id,
         message_id,
-        messages (
+        messages!inner (
           id,
           content,
           channel_id,
-          user_id
+          user_id,
+          created_at,
+          channels!inner (
+            workspace_id
+          )
         )
       `)
       .eq('status', 'pending')
-      .limit(10)
+      .limit(50)
 
     if (fetchError) {
       console.error('Error fetching pending messages:', fetchError)
@@ -45,7 +48,6 @@ serve(async (req) => {
     }
 
     if (!pendingMessages?.length) {
-      console.log('No pending messages found')
       return new Response(
         JSON.stringify({ message: 'No pending messages to process' }),
         { status: 200 }
@@ -67,8 +69,8 @@ serve(async (req) => {
     // Process each pending message
     for (const pending of pendingMessages) {
       const message = pending.messages
-      if (!message) {
-        console.error('Message not found for pending ID:', pending.id)
+      if (!message || !message.channels?.workspace_id) {
+        console.error('Message or workspace_id not found for pending ID:', pending.id)
         continue
       }
 
@@ -76,13 +78,12 @@ serve(async (req) => {
         console.log(`Processing message ${message.id}...`)
 
         // Mark as processing
-        console.log('Marking as processing...')
         const { error: updateError } = await supabase
           .from('pending_embeddings')
           .update({ 
             status: 'processing',
             last_attempt: new Date().toISOString(),
-            attempts: pending.attempts + 1
+            attempts: (pending.attempts || 0) + 1
           })
           .eq('id', pending.id)
 
@@ -92,7 +93,6 @@ serve(async (req) => {
         }
 
         // Generate embedding
-        console.log('Generating embedding...')
         const embeddingResponse = await fetch('https://api.openai.com/v1/embeddings', {
           method: 'POST',
           headers: {
@@ -110,16 +110,15 @@ serve(async (req) => {
         }
 
         const { data } = await embeddingResponse.json()
-        console.log('Successfully generated embedding')
 
-        // Store embedding
-        console.log('Storing embedding...')
+        // Store embedding with workspace_id
         const { error: insertError } = await supabase
           .from('message_embeddings')
           .insert({
             message_id: message.id,
             channel_id: message.channel_id,
             user_id: message.user_id,
+            workspace_id: message.channels.workspace_id,
             embedding: data[0].embedding,
             original_message_content: message.content,
             metadata: {
@@ -133,10 +132,7 @@ serve(async (req) => {
           throw insertError
         }
 
-        console.log('Successfully stored embedding')
-
         // Mark as completed
-        console.log('Marking as completed...')
         const { error: completeError } = await supabase
           .from('pending_embeddings')
           .update({ 

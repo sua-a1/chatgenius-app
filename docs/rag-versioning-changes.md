@@ -101,3 +101,32 @@ CREATE OR REPLACE FUNCTION search_messages()
 - Verified user data appears correctly in search results
 - Confirmed context preservation across chat sessions
 - Validated improved search accuracy with user data integration 
+
+## User Context Improvements (2024-03-XX)
+
+### Message Analysis & User Context
+1. Enhanced first-person reference detection in `analyzeQuery`
+   - Now properly detects "I", "me", "my", "mine" references
+   - Immediately converts first-person references to current username
+   - Ensures consistent user filtering across all query types
+
+2. Improved User Context Propagation
+   - Updated user info passing from frontend route to Edge Function
+   - Added proper user profile fetching from database instead of relying on user_metadata
+   - Ensured username is correctly passed through the entire RAG pipeline
+
+3. Search Text Generation
+   - Added user-specific context in semantic search text generation
+   - Improved search text for user-specific queries (e.g., "messages sent by username")
+   - Better handling of user context in non-aggregation queries
+
+4. Filter Improvements
+   - Enhanced user filtering in `getRelevantMessages`
+   - Added proper logging of username filters
+   - Consistent username cleaning and validation
+
+### Impact
+- Fixed issues with first-person queries (e.g., "What did I send in channel Side")
+- Improved accuracy of message retrieval for user-specific queries
+- More reliable handling of user context across different query types
+- Better semantic search results for user-specific content 

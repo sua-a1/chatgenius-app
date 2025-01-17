@@ -23,6 +23,8 @@ import type { UserStatus } from '@/components/ui/avatar'
 interface ThreadMessage extends Message {
   threadDepth: number
   workspace_id: string
+  reactions?: MessageReaction[]
+  attachments?: { url: string; filename: string; }[]
 }
 
 interface ThreadViewProps {
@@ -43,7 +45,13 @@ const ThreadMessage = React.memo(({
   onShowReplies,
   onStartEdit,
   onDelete,
-  isInStack = false
+  isInStack = false,
+  replyCount,
+  isEditing,
+  editContent,
+  onEditChange,
+  onSaveEdit,
+  onCancelEdit
 }: {
   message: ThreadMessage
   userStatus?: UserStatus
@@ -53,6 +61,12 @@ const ThreadMessage = React.memo(({
   onStartEdit: (messageId: string, content: string) => void
   onDelete: (messageId: string) => void
   isInStack?: boolean
+  replyCount?: number
+  isEditing?: boolean
+  editContent?: string
+  onEditChange?: (content: string) => void
+  onSaveEdit?: () => void
+  onCancelEdit?: () => void
 }) => (
   <div className={`flex flex-col space-y-2 ${message.threadDepth > 0 ? 'ml-6' : ''}`}>
     <UserProfileDisplay
@@ -81,6 +95,21 @@ const ThreadMessage = React.memo(({
       </div>
     </UserProfileDisplay>
     <div className="pl-10 group">
+      {isEditing ? (
+        <div className="flex flex-col space-y-2">
+          <Input
+            value={editContent}
+            onChange={(e) => onEditChange?.(e.target.value)}
+            className="flex-1"
+            placeholder="Edit your message..."
+          />
+          <div className="flex space-x-2">
+            <Button size="sm" onClick={onSaveEdit}>Save</Button>
+            <Button size="sm" variant="ghost" onClick={onCancelEdit}>Cancel</Button>
+          </div>
+        </div>
+      ) : (
+        <>
       <p className="text-sm mb-2">{message.content}</p>
       {message.attachments && message.attachments.length > 0 && (
         <FilePreview attachments={message.attachments} />
@@ -110,8 +139,8 @@ const ThreadMessage = React.memo(({
             <DropdownMenuTrigger asChild>
               <Button
                 variant="ghost"
-                size="icon"
-                className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity"
+                size="sm"
+                className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity ml-auto"
               >
                 <MoreVertical className="h-4 w-4" />
               </Button>
@@ -121,10 +150,7 @@ const ThreadMessage = React.memo(({
                 <Edit className="h-4 w-4 mr-2" />
                 Edit
               </DropdownMenuItem>
-              <DropdownMenuItem 
-                className="text-destructive"
-                onClick={() => onDelete(message.id)}
-              >
+              <DropdownMenuItem onClick={() => onDelete(message.id)}>
                 <Trash className="h-4 w-4 mr-2" />
                 Delete
               </DropdownMenuItem>
@@ -132,6 +158,8 @@ const ThreadMessage = React.memo(({
           </DropdownMenu>
         )}
       </div>
+        </>
+      )}
     </div>
   </div>
 ))
@@ -186,6 +214,7 @@ export default function ThreadView({
   const mainTimeoutId = useRef<NodeJS.Timeout | undefined>(undefined)
   const repliesTimeoutId = useRef<NodeJS.Timeout | undefined>(undefined)
   const currentThreadParent = useMemo(() => threadStack[threadStack.length - 1], [threadStack])
+  const [replyCount, setReplyCount] = useState(parentMessage.reply_count || 0)
 
   // Create a memoized message map for faster lookups
   const messageMap = useMemo(() => {
@@ -265,6 +294,7 @@ export default function ThreadView({
         
         const processedMessages = processMessages(threadMessages)
         setMessages(processedMessages)
+        setReplyCount(threadMessages.length)
       } finally {
         if (mounted) {
           setIsLoading(false)
@@ -274,57 +304,147 @@ export default function ThreadView({
 
     loadMessages()
     
-    // Subscribe to changes in the parent message and direct replies
+    // Single channel for all thread-related updates
     const channel = supabase
       .channel(`thread:${currentThreadParent.id}`)
       .on('postgres_changes', {
-        event: '*',
+        event: '*', // Listen for all events
         schema: 'public',
         table: 'messages',
-        filter: `id=eq.${currentThreadParent.id} or reply_to=eq.${currentThreadParent.id}`
-      }, () => {
-        // Debounce updates to prevent rapid re-renders
-        clearTimeout(mainTimeoutId.current)
-        mainTimeoutId.current = setTimeout(() => {
-          if (!isLoading && mounted) {
-            loadMessages()
-          }
-        }, 100)
-      })
-      .subscribe()
+        filter: `channel_id=eq.${currentThreadParent.channel_id}`,
+      }, async (payload) => {
+        if (!mounted) return
 
-    // Subscribe to changes in replies to replies
-    const repliesChannel = supabase
-      .channel(`thread-replies:${currentThreadParent.id}`)
-      .on('postgres_changes', {
-        event: '*',
-        schema: 'public',
-        table: 'messages',
-        filter: `reply_to.neq.${currentThreadParent.id} and reply_to.in.(select id from messages where reply_to=${currentThreadParent.id})`
-      }, () => {
-        // Debounce updates to prevent rapid re-renders
-        clearTimeout(repliesTimeoutId.current)
-        repliesTimeoutId.current = setTimeout(() => {
-          if (!isLoading && mounted) {
-            loadMessages()
+        // Handle INSERT
+        if (payload.eventType === 'INSERT') {
+          const newMessage = payload.new
+          // Check if this is a direct reply or a nested reply
+          const isRelevantMessage = newMessage.reply_to === currentThreadParent.id || 
+            messages.some(m => {
+              // Check if this is a reply to a direct reply (depth 1)
+              if (m.id === newMessage.reply_to && m.reply_to === currentThreadParent.id) {
+                return true
+              }
+              // Check if this is a reply to a depth 2 message
+              if (m.id === newMessage.reply_to && messages.some(parent => 
+                parent.id === m.reply_to && parent.reply_to === currentThreadParent.id
+              )) {
+                return true
+              }
+              return false
+            })
+          
+          if (isRelevantMessage) {
+            // Fetch complete message data including user info and reactions
+            const { data: messageData } = await supabase
+              .from('messages')
+              .select(`
+                *,
+                user:users!inner(id, username, avatar_url),
+                message_reactions_with_users(*)
+              `)
+              .eq('id', newMessage.id)
+              .single()
+
+            if (messageData) {
+              const userData = Array.isArray(messageData.user) ? messageData.user[0] : messageData.user
+              // Calculate thread depth
+              let threadDepth = 1
+              if (messageData.reply_to !== currentThreadParent.id) {
+                const parent = messages.find(m => m.id === messageData.reply_to)
+                if (parent?.reply_to === currentThreadParent.id) {
+                  threadDepth = 2
+                } else if (parent && messages.some(m => 
+                  m.id === parent.reply_to && m.reply_to === currentThreadParent.id
+                )) {
+                  threadDepth = 2 // Keep depth 2 for replies to depth 2 messages
+                }
+              }
+
+              // Update reply count for parent message if this is a reply to a depth 2 message
+              const parentMessage = messages.find(m => m.id === messageData.reply_to)
+              if (parentMessage && parentMessage.threadDepth === 2) {
+                setMessages(prev => prev.map(msg => 
+                  msg.id === parentMessage.id 
+                    ? { ...msg, reply_count: (msg.reply_count || 0) + 1 }
+                    : msg
+                ))
+              }
+
+              setMessages(prev => [...prev, {
+                ...messageData,
+                user: userData,
+                reactions: messageData.message_reactions_with_users || [],
+                attachments: messageData.attachments || [],
+                threadDepth,
+                workspace_id: currentThreadParent.workspace_id,
+                reply_count: 0
+              }])
+              if (threadDepth === 1) {
+                setReplyCount(prev => prev + 1)
+              }
+            }
           }
-        }, 100)
+        }
+        // Handle UPDATE
+        else if (payload.eventType === 'UPDATE') {
+          const updatedMessage = payload.new
+          const messageExists = messages.some(m => m.id === updatedMessage.id)
+          if (!messageExists) return
+
+          // Fetch complete message data
+          const { data: messageData } = await supabase
+            .from('messages')
+            .select(`
+              *,
+              user:users!inner(id, username, avatar_url),
+              message_reactions_with_users(*)
+            `)
+            .eq('id', updatedMessage.id)
+            .single()
+
+          if (messageData) {
+            const userData = Array.isArray(messageData.user) ? messageData.user[0] : messageData.user
+            setMessages(prev => prev.map(msg => 
+              msg.id === messageData.id 
+                ? {
+                    ...msg,
+                    ...messageData,
+                    user: userData,
+                    reactions: messageData.message_reactions_with_users || msg.reactions || [],
+                    attachments: messageData.attachments || msg.attachments || [],
+                    threadDepth: msg.threadDepth
+                  }
+                : msg
+            ))
+          }
+        }
+        // Handle DELETE
+        else if (payload.eventType === 'DELETE') {
+          const deletedMessage = payload.old
+          const messageExists = messages.some(m => m.id === deletedMessage.id)
+          if (!messageExists) return
+
+          const isDirectReply = deletedMessage.reply_to === currentThreadParent.id
+          if (isDirectReply) {
+            setReplyCount(count => Math.max(0, count - 1))
+          }
+          setMessages(prev => prev.filter(msg => msg.id !== deletedMessage.id))
+        }
       })
       .subscribe()
 
     return () => {
       mounted = false
-      clearTimeout(mainTimeoutId.current)
-      clearTimeout(repliesTimeoutId.current)
       channel.unsubscribe()
-      repliesChannel.unsubscribe()
     }
-  }, [currentThreadParent.id, loadThreadMessages, processMessages, isLoading, messages])
+  }, [currentThreadParent.id, currentThreadParent.channel_id, loadThreadMessages, processMessages])
 
   // Update the filtered messages memo to be more efficient
   const filteredMessages = useMemo(() => {
     // First, calculate depths for all messages
     const depths = new Map<string, number>()
+    const replyCounts = new Map<string, number>()
     const parentId = currentThreadParent.id
 
     // First pass: Calculate depths for all messages
@@ -340,16 +460,39 @@ export default function ThreadView({
       }
     })
 
-    return messages
+    // Second pass: Calculate reply counts for depth 2 messages
+    messages.forEach(message => {
+      if (message.reply_to) {
+        // Find the parent message
+        const parent = messages.find(m => m.id === message.reply_to)
+        if (parent) {
+          const parentDepth = depths.get(parent.id)
+          if (parentDepth === 2) {
+            // This is a reply to a depth 2 message, increment its reply count
+            replyCounts.set(parent.id, (replyCounts.get(parent.id) || 0) + 1)
+          }
+        }
+      }
+    })
+
+    // Filter and map messages
+    const filtered = messages
       .filter(message => {
         const depth = depths.get(message.id)
         // Only show messages that are part of this thread and up to depth 2
         return depth !== undefined && depth <= 2
       })
+      .map(message => ({
+        ...message,
+        threadDepth: depths.get(message.id) || 0,
+        reply_count: replyCounts.get(message.id) || 0 // Show reply count for depth 2 messages with replies
+      }))
       .sort((a, b) => {
         // Sort by timestamp
         return new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
       })
+
+    return filtered
   }, [messages, currentThreadParent.id])
 
   // Add a function to check if a message is in the current thread stack
@@ -374,6 +517,10 @@ export default function ThreadView({
     }
     return success
   }, [sendMessageProp, replyingTo, currentThreadParent.id])
+
+  const handleEditChange = useCallback((content: string) => {
+    setEditContent(content)
+  }, [])
 
   const handleSaveEdit = useCallback(async (messageId: string) => {
     if (!editContent.trim()) return
@@ -418,6 +565,12 @@ export default function ThreadView({
             onStartEdit={handleStartEdit}
             onDelete={handleDelete}
             isInStack={true}
+            replyCount={currentThreadParent.id === currentThreadParent.id ? replyCount : undefined}
+            isEditing={editingMessage === currentThreadParent.id}
+            editContent={editingMessage === currentThreadParent.id ? editContent : ''}
+            onEditChange={handleEditChange}
+            onSaveEdit={() => handleSaveEdit(currentThreadParent.id)}
+            onCancelEdit={handleCancelEdit}
           />
 
           {/* Thread Messages */}
@@ -435,6 +588,12 @@ export default function ThreadView({
                     onStartEdit={handleStartEdit}
                     onDelete={handleDelete}
                     isInStack={isMessageInStack(message.id)}
+                    replyCount={message.id === currentThreadParent.id ? replyCount : undefined}
+                    isEditing={editingMessage === message.id}
+                    editContent={editingMessage === message.id ? editContent : ''}
+                    onEditChange={handleEditChange}
+                    onSaveEdit={() => handleSaveEdit(message.id)}
+                    onCancelEdit={handleCancelEdit}
                   />
                   {/* Nested replies */}
                   <div className="ml-6 pl-4 space-y-4 border-l-2 border-l-muted">
@@ -450,7 +609,13 @@ export default function ThreadView({
                           onShowReplies={handleShowReplies}
                           onStartEdit={handleStartEdit}
                           onDelete={handleDelete}
-                          isInStack={isMessageInStack(reply.id) || hasVisibleReplies(reply.id)}
+                          isInStack={isMessageInStack(reply.id)}
+                          replyCount={reply.reply_count}
+                          isEditing={editingMessage === reply.id}
+                          editContent={editingMessage === reply.id ? editContent : ''}
+                          onEditChange={handleEditChange}
+                          onSaveEdit={() => handleSaveEdit(reply.id)}
+                          onCancelEdit={handleCancelEdit}
                         />
                       ))}
                   </div>

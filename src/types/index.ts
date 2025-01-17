@@ -95,5 +95,11 @@ export interface File {
   channel_id: string | null;
   created_at: string;
 }
+
+export interface ThreadMessage extends Message {
+  threadDepth?: number;
+  reactions?: MessageReaction[];
+  attachments?: { url: string; filename: string; }[];
+}
   
   
