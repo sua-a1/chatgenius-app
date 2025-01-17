@@ -42,23 +42,16 @@ interface Reaction {
 
 export interface Message {
   id: string;
-  user_id: string;
   channel_id: string;
+  user_id: string;
   content: string;
   reply_to: string | null;
   reply_count: number;
   created_at: string;
   updated_at: string;
-  user?: {
-    id: string;
-    username: string | null;
-    avatar_url: string | null;
-  };
-  reactions?: MessageReaction[];
-  attachments?: Array<{
-    url: string;
-    filename: string;
-  }>;
+  user?: User;
+  reactions?: any[];
+  attachments?: { url: string; filename: string; }[];
 }
 
 export interface MessageReaction {

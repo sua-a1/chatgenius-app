@@ -33,9 +33,10 @@ import { useAuth } from '@/contexts/auth-context'
 
 interface ChannelManagementProps {
   workspace: Workspace | null;
+  onTabChange?: (tab: string) => void;
 }
 
-export function ChannelManagement({ workspace }: ChannelManagementProps) {
+export function ChannelManagement({ workspace, onTabChange }: ChannelManagementProps) {
   const { profile } = useAuth()
   const { channels, isLoading: isLoadingChannels, deleteChannel } = useChannels(workspace?.id)
   const { 

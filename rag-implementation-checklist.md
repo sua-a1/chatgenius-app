@@ -88,7 +88,7 @@
   - [x] Conversation history visibility rules
 
 ## 6. Query & Response Pipeline
-- [x ] Implement semantic search:
+- [x] Implement semantic search:
   ```typescript
   - [x] Create similarity search function using pgvector
   - [x] Filter by workspace context
@@ -124,7 +124,7 @@
   - [x] `AIMessageBubble` - Message display
   - [x] `AITypingIndicator` - Loading state
   - [x] `AIConversationList` - History view
-- [ ] Add state management:
+- [x] Add state management:
   - [x] Conversation tracking:
     ```typescript
     - [x] Implement conversation persistence service
@@ -132,46 +132,44 @@
     - [x] Handle conversation lifecycle (create, update, delete)
     - [x] Add workspace-specific conversation filtering
     ```
-  - [ ] Message history:
+  - [x] Message history:
     ```typescript
-    - [ ] Implement message history loading on conversation open
-    - [ ] Add pagination for long conversations
-    - [ ] Implement message deletion ( bulk)
+    - [x] Implement message history loading on conversation open
+    - [x] Add pagination for long conversations
+    - [x] Implement message deletion ( bulk)
     ```
-  - [ ] Loading states:
+  - [x] Loading states:
     ```typescript
-    - [ ] Add loading indicators for history fetch
-    - [ ] Handle message sending states
-    - [ ] Show error states with retry options
+    - [x] Add loading indicators for history fetch
+    - [x] Handle message sending states
+    - [x] Show error states with retry options
     ```
-  - [ ] Error handling:
+  - [x] Error handling:
     ```typescript
-    - [ ] Implement error boundaries
-    - [ ] Add retry mechanisms for failed operations
-    - [ ] Show user-friendly error messages
+    - [x] Implement error boundaries
+    - [x] Add retry mechanisms for failed operations
+    - [x] Show user-friendly error messages
     ```
-  - [ ] Persistence:
+  - [x] Persistence:
     ```typescript
-    - [ ] Store conversations in Supabase
-    - [ ] Implement conversation cleanup policies
-    - [ ] Add conversation export functionality
+    - [x] Store conversations in Supabase
+    - [x] Implement conversation cleanup policies
+    - [x] Add conversation export functionality
     ```
-  - [ ] UI/UX enhancements:
+  - [x] UI/UX enhancements:
     ```typescript
-    - [ ] Add conversation list sidebar
-    - [ ] Implement conversation search
-    - [ ] Add conversation delete confirmation
-    - [ ] Show conversation metadata (created, updated dates)
+    - [x] Add conversation delete confirmation
+    - [x] Show conversation metadata (created, updated dates)
     ```
 
 ## 9. Documentation
-- [ ] Technical documentation:
-  - [ ] Vector setup guide
-  - [ ] API endpoints
-  - [ ] Database schema
-- [ ] User documentation:
-  - [ ] AI feature usage guide
-  - [ ] Query best practices
+- [x] Technical documentation:
+  - [x] Vector setup guide @docs/technical/vector-setup-guide.md
+  - [x] API endpoints @docs/technical/api-endpoints.md
+  - [x] Database schema @docs/technical/database-schema.md
+- [x] User documentation:
+  - [x] AI feature usage guide @docs/user/ai-features-guide.md
+  - [x] Query best practices @docs/user/query-best-practices.md
 
 ## 10. Enhanced Prompting & Context Management
 - [x] Dynamic Instruction Selection
@@ -258,18 +256,3 @@
    - [x] Add response templates
    - [x] Implement format validation
    - [x] Test end-to-end pipeline
-
-## 12. Documentation Updates
-- [ ] Technical documentation:
-  ```typescript
-  - [ ] Query analysis system
-  - [ ] Instruction management
-  - [ ] Context filtering
-  - [ ] Response templates
-  ```
-- [ ] Integration guides:
-  ```typescript
-  - [ ] Custom instruction sets
-  - [ ] Context filtering rules
-  - [ ] Response format customization
-  ``` 

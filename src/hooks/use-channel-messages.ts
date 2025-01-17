@@ -173,103 +173,109 @@ export function useChannelMessages(workspaceId: string | undefined, selectedChan
     }
   }, [selectedChannelId, toast])
 
-  const handleMessageUpdate = async (messageId: string) => {
-    // Fetch the complete updated message data
-    const { data: messageData, error } = await supabase
-      .from('messages')
-      .select(`
-        *,
-        user:users!inner(id, username, avatar_url),
-        message_reactions_with_users(*)
-      `)
-      .eq('id', messageId)
-      .single()
-
-    if (!error && messageData) {
-      // Get the latest reply count
-      const { data: replyCount } = await supabase.rpc(
-        'get_message_reply_count',
-        { message_id: messageId }
-      )
-
-      const userData = Array.isArray(messageData.user) ? messageData.user[0] : messageData.user
-      setMessages(prev => prev.map(msg => 
-        msg.id === messageData.id 
-          ? {
-              ...msg,
-              ...messageData,
-              user: userData,
-              reply_count: replyCount || 0,
-              reactions: messageData.message_reactions_with_users || msg.reactions || [],
-              attachments: messageData.attachments || msg.attachments || []
-            }
-          : msg
-      ))
+  const handleMessageUpdate = async (payload: any) => {
+    const messageData = payload.new;
+    
+    if (payload.eventType === 'DELETE') {
+      setMessages(prev => prev.filter(msg => msg.id !== payload.old.id));
+      return;
     }
-  }
+    
+    // For inserts and updates, we'll use the payload data and only fetch what's missing
+    const [userResponse] = await Promise.all([
+      supabase
+        .from('users')
+        .select('id, username, avatar_url')
+        .eq('id', messageData.user_id)
+        .single()
+    ]);
+
+    if (userResponse.error || !userResponse.data) return;
+
+    const updatedMessage = {
+      ...messageData,
+      user: userResponse.data,
+      reactions: [], // Initialize empty, will be updated via separate subscription
+      attachments: messageData.attachments || []
+    };
+
+    setMessages(prev => {
+      const exists = prev.some(msg => msg.id === messageData.id);
+      if (exists) {
+        return prev.map(msg => msg.id === messageData.id ? {
+          ...msg,
+          ...updatedMessage,
+          reactions: msg.reactions || [] // Preserve existing reactions
+        } : msg);
+      } else {
+        return [...prev, updatedMessage];
+      }
+    });
+  };
 
   useEffect(() => {
     if (!workspaceId || !selectedChannelId || !profile?.id) {
-      console.log('[DEBUG] Missing required data:', { workspaceId, selectedChannelId, userId: profile?.id })
-      return
+      console.log('[DEBUG] Missing required data:', { workspaceId, selectedChannelId, userId: profile?.id });
+      return;
     }
 
-    setIsLoading(true)
-    loadMessages()
-    loadSelectedChannel()
+    setIsLoading(true);
+    loadMessages();
+    loadSelectedChannel();
 
-    // Set up realtime subscription with unique channel name
-    console.log('[DEBUG] Setting up realtime subscription for channel:', selectedChannelId)
+    // Set up realtime subscriptions with unique channel names
+    console.log('[DEBUG] Setting up realtime subscriptions for channel:', selectedChannelId);
     
-    const channel = supabase.channel(`messages:${selectedChannelId}:${profile.id}`)
+    const messageChannel = supabase.channel(`messages:${selectedChannelId}:${profile.id}`);
+    const reactionChannel = supabase.channel(`reactions:${selectedChannelId}:${profile.id}`);
     
-    const subscription = channel
+    // Subscribe to message changes
+    messageChannel
       .on(
         'postgres_changes',
         {
-          event: 'INSERT',
+          event: '*',
           schema: 'public',
           table: 'messages',
           filter: `channel_id=eq.${selectedChannelId} and reply_to=is.null`
         },
-        async (payload) => {
-          // Only handle top-level messages
-          await handleMessageUpdate(payload.new.id)
-        }
+        handleMessageUpdate
       )
+      .subscribe();
+
+    // Subscribe to reaction changes separately
+    reactionChannel
       .on(
         'postgres_changes',
         {
-          event: 'UPDATE',
+          event: '*',
           schema: 'public',
-          table: 'messages',
-          filter: `channel_id=eq.${selectedChannelId} and reply_to=is.null`
+          table: 'message_reactions_with_users',
+          filter: `message_id=in.(select id from messages where channel_id=${selectedChannelId} and reply_to is null)`
         },
-        async (payload) => {
-          // Only handle top-level messages
-          await handleMessageUpdate(payload.new.id)
+        async (payload: any) => {
+          const messageId = payload.new?.message_id || payload.old?.message_id;
+          if (!messageId) return;
+          
+          // Fetch only reactions for the affected message
+          const { data: reactions } = await supabase
+            .from('message_reactions_with_users')
+            .select('*')
+            .eq('message_id', messageId);
+
+          setMessages(prev => prev.map(msg => 
+            msg.id === messageId ? { ...msg, reactions: reactions || [] } : msg
+          ));
         }
       )
-      .on(
-        'postgres_changes',
-        {
-          event: 'DELETE',
-          schema: 'public',
-          table: 'messages',
-          filter: `channel_id=eq.${selectedChannelId} and reply_to=is.null`
-        },
-        async (payload) => {
-          // Only handle top-level messages
-          setMessages(prev => prev.filter(msg => msg.id !== payload.old.id))
-        }
-      )
-      .subscribe()
+      .subscribe();
 
     return () => {
-      console.log('[DEBUG] Cleaning up subscription for channel:', selectedChannelId)
-      channel.unsubscribe()
-    }
-  }, [workspaceId, selectedChannelId, profile?.id, loadMessages, loadSelectedChannel])
+      console.log('[DEBUG] Cleaning up subscriptions for channel:', selectedChannelId);
+      messageChannel.unsubscribe();
+      reactionChannel.unsubscribe();
+    };
+  }, [workspaceId, selectedChannelId, profile?.id]);
 
   const sendMessage = async (content: string, attachmentsOrReplyTo?: string[] | string) => {
     if (!profile?.id || !selectedChannelId || !workspaceId) return false

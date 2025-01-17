@@ -155,22 +155,22 @@ function AppContent() {
   const renderMainContent = () => {
     switch (activeTab) {
       case 'chat':
-        if (activeChannel) {
+        if (activeChannel && activeWorkspace) {
           return (
             <ChannelMessageArea
               key={activeChannel.id}
               selectedChannelId={activeChannel.id}
-              workspace={activeWorkspace!}
+              workspace={{ id: activeWorkspace.id }}
               onClose={() => setActiveChannel(null)}
             />
           )
         }
-        if (activeDM) {
+        if (activeDM && activeWorkspace) {
           return (
             <DirectMessageArea
               key={activeDM}
               selectedUserId={activeDM}
-              workspace={activeWorkspace!}
+              workspace={{ id: activeWorkspace.id }}
               onClose={() => setActiveDM(null)}
             />
           )
@@ -185,6 +185,7 @@ function AppContent() {
       case 'admin':
         return (
           <AdminPanel
+            workspace={activeWorkspace}
             workspaces={workspaces}
             onDeleteWorkspace={handleDeleteWorkspace}
             onTabChange={handleTabChange}
@@ -214,8 +215,19 @@ function AppContent() {
             onSelectChannel={handleSelectChannel}
             onSelectDM={handleSelectDM}
             onTabChange={handleTabChange}
+            onDeleteWorkspace={handleDeleteWorkspace}
           >
-            {renderMainContent()}
+            {activeChannel && activeWorkspace ? (
+              <ChannelMessageArea
+                selectedChannelId={activeChannel.id}
+                workspace={{ id: activeWorkspace.id }}
+              />
+            ) : activeDM && activeWorkspace ? (
+              <DirectMessageArea
+                selectedUserId={activeDM}
+                workspace={{ id: activeWorkspace.id }}
+              />
+            ) : null}
           </WorkspacePage>
         )}
       </div>

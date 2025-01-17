@@ -1,12 +1,12 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useChannels } from '@/hooks/use-channels'
 import { useDirectMessages } from '@/hooks/use-direct-messages'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Settings, Search, Users, Shield, Bot, X, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Settings, Users, Shield, Bot, X, ChevronLeft, ChevronRight } from 'lucide-react'
 import { useAuth } from '@/contexts/auth-context'
 import type { UserProfile } from '@/contexts/auth-context'
 import { useUserStatus } from '@/contexts/user-status-context'
@@ -28,10 +28,11 @@ interface WorkspacePageProps {
   onSelectChannel: (channelId: string) => void
   onSelectDM: (userId: string) => void
   onTabChange: (tab: string) => void
+  onDeleteWorkspace: (workspaceId: string) => Promise<boolean>
   children?: React.ReactNode
 }
 
-export default function WorkspacePage({ workspace, workspaces, onOpenProfileSettings, onSelectChannel, onSelectDM, onTabChange, children }: WorkspacePageProps) {
+export default function WorkspacePage({ workspace, workspaces, onOpenProfileSettings, onSelectChannel, onSelectDM, onTabChange, onDeleteWorkspace, children }: WorkspacePageProps) {
   const { profile } = useAuth()
   const { userStatuses } = useUserStatus()
   const [isCollapsed, setIsCollapsed] = useState(false)
@@ -79,10 +80,18 @@ export default function WorkspacePage({ workspace, workspaces, onOpenProfileSett
     refreshChats()
   }
 
-  const handleTabChange = (tab: string) => {
+  const handleTabChange = useCallback((tab: string) => {
     setActiveTab(tab)
     onTabChange(tab)
-  }
+  }, [onTabChange])
+
+  const handleDeleteWorkspace = useCallback(async (workspaceId: string) => {
+    const success = await onDeleteWorkspace(workspaceId)
+    if (success) {
+      handleTabChange('chat')
+    }
+    return success
+  }, [onDeleteWorkspace, handleTabChange])
 
   // Effect to handle workspace switching
   useEffect(() => {
@@ -108,15 +117,6 @@ export default function WorkspacePage({ workspace, workspaces, onOpenProfileSett
                 {isCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
               </Button>
               {workspace && <h1 className="text-xl font-semibold">{workspace.name}</h1>}
-            </div>
-          </div>
-          <div className="flex-1 max-w-2xl mx-8">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input 
-                placeholder="Search messages..." 
-                className="w-full pl-10 h-9"
-              />
             </div>
           </div>
           <div className="flex items-center gap-4">
@@ -178,9 +178,11 @@ export default function WorkspacePage({ workspace, workspaces, onOpenProfileSett
         {/* Main Content Area */}
         <main className="flex-1 overflow-auto">
           {activeTab === 'admin' && workspace && isAdmin ? (
-            <AdminPanel 
-              workspace={workspace} 
-              onTabChange={handleTabChange} 
+            <AdminPanel
+              workspace={workspace}
+              workspaces={workspaces}
+              onDeleteWorkspace={handleDeleteWorkspace}
+              onTabChange={handleTabChange}
             />
           ) : (
             children

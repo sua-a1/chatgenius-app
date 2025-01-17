@@ -55,32 +55,20 @@ export async function POST(request: Request) {
       })
 
     if (messageError) {
-      console.error('Message storage error:', messageError);
+      console.error('Message storage error:', messageError)
       return NextResponse.json({ error: `Failed to store message: ${messageError.message}` }, { status: 500 })
     }
-
-    // Initialize OpenAI embeddings
-    const embeddings = new OpenAIEmbeddings({
-      openAIApiKey: process.env.OPENAI_API_KEY
-    })
-
-    // Create vector store
-    const vectorStore = await SupabaseVectorStore.fromExistingIndex(embeddings, {
-      client: supabase,
-      tableName: 'message_embeddings',
-      queryName: 'search_messages'
-    });
 
     // Get user profile to ensure we have the username
     const { data: userProfile, error: userError } = await supabase
       .from('users')
       .select('username, full_name')
       .eq('id', session.user.id)
-      .single();
+      .single()
 
     if (userError) {
-      console.error('Error fetching user profile:', userError);
-      return NextResponse.json({ error: 'Failed to fetch user profile' }, { status: 500 });
+      console.error('Error fetching user profile:', userError)
+      return NextResponse.json({ error: 'Failed to fetch user profile' }, { status: 500 })
     }
 
     try {
@@ -98,7 +86,7 @@ export async function POST(request: Request) {
             full_name: userProfile.full_name
           }
         }
-      });
+      })
 
       if (completionError) {
         console.error('Error calling chat-completion:', completionError)

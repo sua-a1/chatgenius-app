@@ -16,6 +16,7 @@ export interface Message {
     username: string | null
     avatar_url: string | null
   }
+  reactions?: MessageReaction[]
 }
 
 export interface Channel {
@@ -31,10 +32,13 @@ export interface Channel {
 }
 
 export interface MessageReaction {
+  id: string
   message_id: string
-  channel_id: string
   user_id: string
   emoji: string
+  created_at: string
+  username: string
+  avatar_url: string | null
 }
 
 export interface ThreadMessageResponse {

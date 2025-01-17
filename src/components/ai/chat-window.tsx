@@ -4,6 +4,7 @@ import { AIMessageBubble } from './message-bubble';
 import { AITypingIndicator } from './typing-indicator';
 import { Bot, Trash2, AlertCircle, RefreshCcw, Download } from 'lucide-react';
 import { format } from 'date-fns';
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -14,7 +15,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Alert, AlertDescription } from "@/components/ui/alert";
 
 interface AIChatWindowProps {
   workspaceId: string;

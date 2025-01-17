@@ -206,11 +206,80 @@ export function useDirectMessages(workspaceId: string | undefined, selectedUserI
     }
   }, [selectedUserId])
 
-  // Load messages for selected user
+  const handleMessageUpdate = async (payload: any) => {
+    // Skip if we're still in initial load
+    if (isInitialLoad.current) {
+      console.log('DM Hook: Skipping event during initial load');
+      return;
+    }
+
+    // Skip if this is a message we sent or edited (already handled)
+    if (payload.eventType === 'INSERT' && sentMessageIds.current.has(payload.new.id)) {
+      console.log('DM Hook: Skipping event for message we sent:', payload.new.id);
+      return;
+    }
+    if (payload.eventType === 'UPDATE' && editedMessageIds.current.has(payload.new.id)) {
+      console.log('DM Hook: Skipping event for message we edited:', payload.new.id);
+      editedMessageIds.current.delete(payload.new.id);
+      return;
+    }
+
+    const messageData = payload.new;
+    
+    // For inserts and updates, fetch only the necessary additional data
+    const [senderResponse, receiverResponse, reactionsResponse] = await Promise.all([
+      supabase
+        .from('users')
+        .select('id, username, avatar_url')
+        .eq('id', messageData.sender_id)
+        .single(),
+      supabase
+        .from('users')
+        .select('id, username, avatar_url')
+        .eq('id', messageData.receiver_id)
+        .single(),
+      supabase
+        .from('direct_message_reactions_with_users')
+        .select('*')
+        .eq('message_id', messageData.id)
+    ]);
+
+    if (senderResponse.error || receiverResponse.error) return;
+
+    const updatedMessage: DirectMessage = {
+      id: messageData.id,
+      content: messageData.message,
+      created_at: messageData.created_at,
+      sender_id: messageData.sender_id,
+      receiver_id: messageData.receiver_id,
+      sender: senderResponse.data,
+      receiver: receiverResponse.data,
+      reactions: reactionsResponse.data || [],
+      attachments: messageData.attachments || []
+    };
+
+    if (payload.eventType === 'INSERT') {
+      setMessages(prev => {
+        if (prev.some(msg => msg.id === updatedMessage.id)) {
+          return prev;
+        }
+        return [...prev, updatedMessage];
+      });
+    } else {
+      setMessages(prev => prev.map(msg => 
+        msg.id === updatedMessage.id ? updatedMessage : msg
+      ));
+    }
+
+    // Update chats in the background
+    updateChatsDebounced();
+  };
+
+  // Update the realtime subscription effect
   useEffect(() => {
     if (!workspaceId || !selectedUserId || !profile?.id) {
-      setMessages([])
-      return
+      setMessages([]);
+      return;
     }
 
     // Set up realtime subscription for messages
@@ -219,223 +288,38 @@ export function useDirectMessages(workspaceId: string | undefined, selectedUserI
       .on(
         'postgres_changes',
         {
-          event: 'INSERT',
+          event: '*',
           schema: 'public',
           table: 'direct_messages',
           filter: `workspace_id=eq.${workspaceId} and ((sender_id=eq.${selectedUserId} and receiver_id=eq.${profile.id}) or (sender_id=eq.${profile.id} and receiver_id=eq.${selectedUserId}))`,
         },
-        async (payload: any) => {
-          // Skip if we're still in initial load
-          if (isInitialLoad.current) {
-            console.log('DM Hook: Skipping INSERT event during initial load')
-            return
-          }
-
-          // Skip if this is a message we sent (already handled optimistically)
-          if (sentMessageIds.current.has(payload.new.id)) {
-            console.log('DM Hook: Skipping INSERT event for message we sent:', payload.new.id)
-            return
-          }
-
-          console.log('DM Hook: Received INSERT event:', payload)
-          try {
-            const { data: messageData, error } = await supabase
-              .from('direct_messages')
-              .select(`
-                id,
-                message,
-                created_at,
-                sender_id,
-                receiver_id,
-                workspace_id,
-                attachments,
-                sender:users!direct_messages_sender_id_fkey(
-                  id,
-                  username,
-                  avatar_url
-                ),
-                receiver:users!direct_messages_receiver_id_fkey(
-                  id,
-                  username,
-                  avatar_url
-                ),
-                direct_message_reactions_with_users(*)
-              `)
-              .eq('id', payload.new.id)
-              .single()
-
-            if (error) throw error
-            if (!messageData) return
-
-            const senderData = Array.isArray(messageData.sender) ? messageData.sender[0] : messageData.sender
-            const receiverData = Array.isArray(messageData.receiver) ? messageData.receiver[0] : messageData.receiver
-
-            const newMessage: DirectMessage = {
-              id: messageData.id,
-              content: messageData.message,
-              created_at: messageData.created_at,
-              sender_id: messageData.sender_id,
-              receiver_id: messageData.receiver_id,
-              sender: {
-                id: senderData.id,
-                username: senderData.username,
-                avatar_url: senderData.avatar_url
-              },
-              receiver: {
-                id: receiverData.id,
-                username: receiverData.username,
-                avatar_url: receiverData.avatar_url
-              },
-              reactions: messageData.direct_message_reactions_with_users || [],
-              attachments: messageData.attachments || []
-            }
-
-            // Only append if it's not already in the list
+        async (payload) => {
+          if (payload.eventType === 'DELETE') {
+            // Immediately remove the message from the UI
             setMessages(prev => {
-              if (prev.some(msg => msg.id === newMessage.id)) {
-                return prev
-              }
-              return [...prev, newMessage]
-            })
-
-            // Update chats in the background with a longer delay
-            updateChatsDebounced()
-          } catch (error) {
-            console.error('DM Hook: Error processing INSERT event:', error)
-          }
-        }
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'direct_messages',
-          filter: `workspace_id=eq.${workspaceId} and ((sender_id=eq.${selectedUserId} and receiver_id=eq.${profile.id}) or (sender_id=eq.${profile.id} and receiver_id=eq.${selectedUserId}))`,
-        },
-        async (payload: any) => {
-          // Skip if we're still in initial load
-          if (isInitialLoad.current) {
-            console.log('DM Hook: Skipping UPDATE event during initial load')
-            return
-          }
-
-          // Skip if this is a message we edited (already handled optimistically)
-          if (editedMessageIds.current.has(payload.new.id)) {
-            console.log('DM Hook: Skipping UPDATE event for message we edited:', payload.new.id)
-            editedMessageIds.current.delete(payload.new.id) // Clean up after handling
-            return
-          }
-
-          console.log('DM Hook: Received UPDATE event:', payload)
-          try {
-            const { data: messageData, error } = await supabase
-              .from('direct_messages')
-              .select(`
-                id,
-                message,
-                created_at,
-                sender_id,
-                receiver_id,
-                workspace_id,
-                attachments,
-                sender:users!direct_messages_sender_id_fkey(
-                  id,
-                  username,
-                  avatar_url
-                ),
-                receiver:users!direct_messages_receiver_id_fkey(
-                  id,
-                  username,
-                  avatar_url
-                ),
-                direct_message_reactions_with_users(*)
-              `)
-              .eq('id', payload.new.id)
-              .single()
-
-            if (error) throw error
-            if (!messageData) return
-
-            const senderData = Array.isArray(messageData.sender) ? messageData.sender[0] : messageData.sender
-            const receiverData = Array.isArray(messageData.receiver) ? messageData.receiver[0] : messageData.receiver
-
-            const updatedMessage: DirectMessage = {
-              id: messageData.id,
-              content: messageData.message,
-              created_at: messageData.created_at,
-              sender_id: messageData.sender_id,
-              receiver_id: messageData.receiver_id,
-              sender: {
-                id: senderData.id,
-                username: senderData.username,
-                avatar_url: senderData.avatar_url
-              },
-              receiver: {
-                id: receiverData.id,
-                username: receiverData.username,
-                avatar_url: receiverData.avatar_url
-              },
-              reactions: messageData.direct_message_reactions_with_users || [],
-              attachments: messageData.attachments || []
-            }
-
-            // Update the message in place
-            setMessages(prev => prev.map(msg => 
-              msg.id === updatedMessage.id ? updatedMessage : msg
-            ))
-
+              const filtered = prev.filter(msg => msg.id !== payload.old.id);
+              console.log('DM Hook: Removed deleted message, remaining:', filtered.length);
+              return filtered;
+            });
             // Update chats in the background
-            updateChatsDebounced()
-          } catch (error) {
-            console.error('DM Hook: Error processing UPDATE event:', error)
+            updateChatsDebounced();
+          } else {
+            // Handle both INSERT and UPDATE
+            await handleMessageUpdate(payload);
           }
         }
       )
-      .on(
-        'postgres_changes',
-        {
-          event: 'DELETE',
-          schema: 'public',
-          table: 'direct_messages',
-          filter: `workspace_id=eq.${workspaceId} and ((sender_id=eq.${selectedUserId} and receiver_id=eq.${profile.id}) or (sender_id=eq.${profile.id} and receiver_id=eq.${selectedUserId}))`,
-        },
-        async (payload: any) => {
-          // Skip if we're still in initial load
-          if (isInitialLoad.current) {
-            console.log('DM Hook: Skipping DELETE event during initial load')
-            return
-          }
-
-          console.log('DM Hook: Received DELETE event:', payload)
-          
-          // Immediately remove the message from the UI
-          setMessages(prev => {
-            const filtered = prev.filter(msg => msg.id !== payload.old.id)
-            console.log('DM Hook: Removed deleted message, remaining:', filtered.length)
-            return filtered
-          })
-
-          // Update chats in the background
-          updateChatsDebounced()
-        }
-      )
-      .subscribe((status) => {
-        console.log('DM Hook: Subscription status:', status)
-        if (status === 'SUBSCRIBED') {
-          console.log('DM Hook: Successfully subscribed to realtime updates')
-        }
-      })
+      .subscribe();
 
     return () => {
-      console.log('DM Hook: Cleaning up subscription')
+      console.log('DM Hook: Cleaning up subscription');
       if (debouncedLoadChats.current) {
-        clearTimeout(debouncedLoadChats.current)
-        debouncedLoadChats.current = null
+        clearTimeout(debouncedLoadChats.current);
+        debouncedLoadChats.current = null;
       }
-      channel.unsubscribe()
-    }
-  }, [workspaceId, selectedUserId, profile?.id])
+      channel.unsubscribe();
+    };
+  }, [workspaceId, selectedUserId, profile?.id]);
 
   const loadSelectedUser = async () => {
     if (!selectedUserId) return

@@ -30,10 +30,12 @@ interface WorkspaceSettings {
 
 interface AdminPanelProps {
   workspace: Workspace | null;
+  workspaces: Workspace[];
   onTabChange: (tab: string) => void;
+  onDeleteWorkspace: (workspaceId: string) => Promise<boolean>;
 }
 
-export function AdminPanel({ workspace, onTabChange }: AdminPanelProps) {
+export function AdminPanel({ workspace, workspaces, onTabChange, onDeleteWorkspace }: AdminPanelProps) {
   const [newUserEmail, setNewUserEmail] = useState('')
   const [newUserRole, setNewUserRole] = useState<'member' | 'admin'>('member')
   const [workspaceSettings, setWorkspaceSettings] = useState<WorkspaceSettings>({

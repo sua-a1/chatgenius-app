@@ -11,13 +11,52 @@ export function useMessageThread(threadId: string | null) {
   const [isLoading, setIsLoading] = useState(false)
   const [replyCount, setReplyCount] = useState(0)
 
+  const handleMessageUpdate = async (payload: any) => {
+    console.log('Thread message change:', payload);
+    
+    if (payload.eventType === 'DELETE') {
+      setMessages(prev => prev.filter(m => m.id !== payload.old.id));
+      setReplyCount(prev => Math.max(0, prev - 1));
+      return;
+    }
+
+    const message = payload.new;
+    
+    // For inserts and updates, we'll use the payload data and only fetch what's missing
+    const { data: userData } = await supabase
+      .from('users')
+      .select('id, username, avatar_url')
+      .eq('id', message.user_id)
+      .single();
+
+    if (!userData) return;
+
+    const updatedMessage = { 
+      ...message, 
+      user: userData,
+      reactions: [], // Initialize empty, will be updated via separate subscription
+      attachments: message.attachments || []
+    };
+
+    if (payload.eventType === 'INSERT') {
+      setMessages(prev => [...prev, updatedMessage]);
+      setReplyCount(prev => prev + 1);
+    } else {
+      setMessages(prev => prev.map(m => m.id === updatedMessage.id ? {
+        ...m,
+        ...updatedMessage,
+        reactions: m.reactions || [] // Preserve existing reactions
+      } : m));
+    }
+  };
+
   useEffect(() => {
     if (profile?.id && threadId) {
-      loadThreadMessages()
+      loadThreadMessages();
 
-      // Subscribe to new messages in this thread
-      const channel = supabase
-        .channel(`thread-${threadId}`)
+      // Set up realtime subscriptions with unique channel names
+      const messageChannel = supabase
+        .channel(`thread-messages-${threadId}-${profile.id}`)
         .on(
           'postgres_changes',
           {
@@ -26,43 +65,44 @@ export function useMessageThread(threadId: string | null) {
             table: 'messages',
             filter: `reply_to=eq.${threadId}`,
           },
-          async (payload) => {
-            console.log('Thread message change:', payload)
-            if (payload.eventType === 'INSERT') {
-              // Add new message to state
-              const message = payload.new as Message
-              // Fetch user info for the new message
-              const { data: userData } = await supabase
-                .from('users')
-                .select('id, username, avatar_url')
-                .eq('id', message.user_id)
-                .single()
+          handleMessageUpdate
+        )
+        .subscribe();
 
-              if (userData) {
-                setMessages(prev => [...prev, { ...message, user: userData }])
-                setReplyCount(prev => prev + 1)
-              }
-            } else if (payload.eventType === 'DELETE') {
-              // Remove message from state
-              const messageId = payload.old.id
-              setMessages(prev => prev.filter(m => m.id !== messageId))
-              setReplyCount(prev => Math.max(0, prev - 1))
-            } else if (payload.eventType === 'UPDATE') {
-              // Update message in place
-              const updatedMessage = payload.new as Message
-              setMessages(prev => prev.map(m => 
-                m.id === updatedMessage.id ? { ...m, ...updatedMessage } : m
-              ))
-            }
+      // Subscribe to reaction changes separately
+      const reactionChannel = supabase
+        .channel(`thread-reactions-${threadId}-${profile.id}`)
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'message_reactions_with_users',
+            filter: `message_id=in.(select id from messages where reply_to=${threadId})`,
+          },
+          async (payload: any) => {
+            const messageId = payload.new?.message_id || payload.old?.message_id;
+            if (!messageId) return;
+            
+            // Fetch only reactions for the affected message
+            const { data: reactions } = await supabase
+              .from('message_reactions_with_users')
+              .select('*')
+              .eq('message_id', messageId);
+
+            setMessages(prev => prev.map(msg => 
+              msg.id === messageId ? { ...msg, reactions: reactions || [] } : msg
+            ));
           }
         )
-        .subscribe()
+        .subscribe();
 
       return () => {
-        channel.unsubscribe()
-      }
+        messageChannel.unsubscribe();
+        reactionChannel.unsubscribe();
+      };
     }
-  }, [profile?.id, threadId])
+  }, [profile?.id, threadId]);
 
   const loadThreadMessages = async () => {
     if (!threadId) return

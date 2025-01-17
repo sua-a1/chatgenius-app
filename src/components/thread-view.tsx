@@ -10,7 +10,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { formatDistanceToNow } from 'date-fns'
 import { Edit, MoreVertical, Trash, ArrowUpRight, ArrowLeft, X } from 'lucide-react'
 import { MessageReactions } from './message-reactions'
-import { Message } from '@/types'
+import { Message, MessageReaction } from '@/types'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { supabase } from '@/lib/supabase'
 import { UserProfileDisplay } from './user-profile-display'
@@ -20,11 +20,11 @@ import { MessageComposer } from '@/components/message-composer'
 import { UserAvatar, UserName } from '@/components/ui/user-avatar'
 import type { UserStatus } from '@/components/ui/avatar'
 
+// Extend Message type with thread-specific properties
 interface ThreadMessage extends Message {
-  threadDepth: number
-  workspace_id: string
-  reactions?: MessageReaction[]
-  attachments?: { url: string; filename: string; }[]
+  threadDepth: number;
+  workspace_id: string;
+  reactions?: MessageReaction[];
 }
 
 interface ThreadViewProps {
@@ -37,7 +37,7 @@ interface ThreadViewProps {
 }
 
 // Memoized thread message component
-const ThreadMessage = React.memo(({ 
+const ThreadMessageItem = React.memo(({ 
   message,
   userStatus,
   isCurrentUser,
@@ -163,7 +163,7 @@ const ThreadMessage = React.memo(({
     </div>
   </div>
 ))
-ThreadMessage.displayName = 'ThreadMessage'
+ThreadMessageItem.displayName = 'ThreadMessageItem'
 
 // Add memoized thread stack navigation component
 const ThreadStackNavigation = React.memo(({ 
@@ -556,7 +556,7 @@ export default function ThreadView({
       <ScrollArea className="flex-1">
         <div className="p-4 space-y-4">
           {/* Parent Message */}
-          <ThreadMessage 
+          <ThreadMessageItem 
             message={currentThreadParent}
             userStatus={userStatuses.get(currentThreadParent.user?.id || '')}
             isCurrentUser={currentThreadParent.user?.id === profile?.id}
@@ -579,7 +579,7 @@ export default function ThreadView({
               .filter(message => message.threadDepth === 1)
               .map(message => (
                 <div key={message.id} className="space-y-4">
-                  <ThreadMessage 
+                  <ThreadMessageItem 
                     message={message}
                     userStatus={userStatuses.get(message.user?.id || '')}
                     isCurrentUser={message.user?.id === profile?.id}
@@ -600,7 +600,7 @@ export default function ThreadView({
                     {filteredMessages
                       .filter(reply => reply.threadDepth === 2 && reply.reply_to === message.id)
                       .map(reply => (
-                        <ThreadMessage 
+                        <ThreadMessageItem 
                           key={reply.id}
                           message={reply}
                           userStatus={userStatuses.get(reply.user?.id || '')}

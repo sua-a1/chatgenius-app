@@ -15,7 +15,7 @@ import { useWorkspaces } from '@/hooks/use-workspaces'
 import { useChannels } from '@/hooks/use-channels'
 
 export default function Home() {
-  const { workspaces, isLoading, createWorkspace } = useWorkspaces()
+  const { workspaces, isLoading, createWorkspace, deleteWorkspace } = useWorkspaces()
   const [activeWorkspace, setActiveWorkspace] = useState<Workspace | null>(null)
   const [activeChannel, setActiveChannel] = useState<Channel | null>(null)
   const [activeDM, setActiveDM] = useState<string | null>(null)
@@ -43,6 +43,16 @@ export default function Home() {
     }
     return null
   }, [createWorkspace])
+
+  const handleDeleteWorkspace = useCallback(async (workspaceId: string) => {
+    const success = await deleteWorkspace(workspaceId)
+    if (success && activeWorkspace?.id === workspaceId) {
+      setActiveWorkspace(null)
+      setActiveChannel(null)
+      setActiveDM(null)
+    }
+    return success
+  }, [deleteWorkspace, activeWorkspace])
 
   const handleSelectChannel = (channelId: string) => {
     if (!activeWorkspace) return
@@ -88,9 +98,11 @@ export default function Home() {
       case 'admin':
         return (
           <div className="flex-1 p-4">
-            <AdminPanel 
-              workspace={activeWorkspace} 
-              onTabChange={handleTabChange} 
+            <AdminPanel
+              workspace={activeWorkspace}
+              workspaces={workspaces}
+              onDeleteWorkspace={handleDeleteWorkspace}
+              onTabChange={handleTabChange}
             />
           </div>
         )
@@ -131,12 +143,13 @@ export default function Home() {
       <div className="flex flex-1">
           <WorkspacePage 
             workspace={activeWorkspace}
-          workspaces={workspaces}
-          onOpenProfileSettings={handleOpenProfileSettings}
+            workspaces={workspaces}
+            onOpenProfileSettings={handleOpenProfileSettings}
             onSelectChannel={handleSelectChannel}
             onSelectDM={handleSelectDM}
-          onTabChange={handleTabChange}
-        />
+            onTabChange={handleTabChange}
+            onDeleteWorkspace={handleDeleteWorkspace}
+          />
         {activeWorkspace && renderMainContent()}
       </div>
       {showProfileSettings && (

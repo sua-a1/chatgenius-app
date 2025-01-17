@@ -1,39 +1,94 @@
-Deployed here: https://chatgenius-app-s.vercel.app/
+# ChatGenius App
 
+A modern real-time chat application with AI assistance capabilities, built with Next.js, Supabase, and shadcn/ui.
 
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+## Features
 
-## Getting Started
+### Core Chat Features
+- Real-time messaging with optimized performance
+- Thread-based conversations
+- Direct messaging
+- Channel management
+- File attachments and previews
+- Message reactions
+- User presence indicators
+- Role-based permissions
 
-First, run the development server:
+### AI Assistant Integration
+- Contextual workspace assistance
+- Real-time chat with AI
+- Thread-based AI conversations
+- Chat history export
+- Conversation memory and context management
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+## Technical Implementation
+
+### Real-time Architecture
+- Optimized Supabase real-time subscriptions
+- Separate message and reaction channels
+- Efficient state management
+- Reduced database queries
+- Preserved reaction states during updates
+
+### RAG Implementation
+The AI assistant uses a Retrieval-Augmented Generation (RAG) system with the following components:
+
+#### Query Analysis System
+- Instruction management for contextual queries
+- Context filtering for relevant information retrieval
+- Response templates for consistent AI outputs
+
+#### Integration Components
+- Custom instruction sets for workspace-specific queries
+- Context filtering rules for improved relevance
+- Response format customization
+
+## Setup and Configuration
+
+### Prerequisites
+- Node.js 18+
+- Supabase account
+- OpenAI API key
+
+### Environment Variables
+```env
+NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
+OPENAI_API_KEY=your_openai_api_key
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### Installation
+1. Clone the repository
+```bash
+git clone https://github.com/yourusername/chatgenius-app.git
+cd chatgenius-app
+```
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+2. Install dependencies
+```bash
+npm install
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+3. Run development server
+```bash
+npm run dev
+```
 
-## Learn More
+## Documentation
 
-To learn more about Next.js, take a look at the following resources:
+### Technical Documentation
+- Vector setup guide @docs/technical/vector-setup-guide.md
+- API endpoints documentation @docs/technical/api-endpoints.md
+- Database schema documentation @docs/technical/database-schema.md
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+### User Documentation
+- AI feature usage guide @docs/user/ai-features-guide.md
+- Query best practices @docs/user/query-best-practices.md
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Contributing
 
-## Deploy on Vercel
+Contributions are welcome! Please read our contributing guidelines before submitting pull requests.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## License
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+[License Type] - See LICENSE file for details
