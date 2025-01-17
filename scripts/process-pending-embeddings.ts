@@ -98,6 +98,7 @@ async function processPendingEmbeddings() {
           channel_id: message.channel_id,
           user_id: message.user_id,
           workspace_id: message.channels.workspace_id,
+          original_message_content: message.content,
           metadata: {
             content: message.content,
             created_at: message.created_at,

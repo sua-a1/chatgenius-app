@@ -3,3 +3,7 @@ jwt_verification = false
 
 [trigger.cron]
 schedule = "*/5 * * * *"  # Run every 5 minutes 
+
+[functions.process-pending-embeddings]
+verify_jwt = false
+schedule = "*/5 * * * *"  # Run every 5 minutes 

@@ -1,62 +1,44 @@
--- Create a table to track messages that need embeddings
-create table if not exists pending_embeddings (
-  id uuid primary key default uuid_generate_v4(),
-  message_id uuid references messages(id) on delete cascade,
-  status text default 'pending',
-  attempts int default 0,
-  last_attempt timestamptz,
-  error_message text,
-  created_at timestamptz default now(),
-  updated_at timestamptz default now()
-);
+-- Drop existing objects if they exist
+DROP TRIGGER IF EXISTS trigger_new_message_embedding ON messages;
+DROP FUNCTION IF EXISTS handle_new_message();
+DROP TABLE IF EXISTS pending_embeddings;
 
--- Create indexes for efficient querying
-create index if not exists pending_embeddings_status_idx on pending_embeddings(status);
-create index if not exists pending_embeddings_message_id_idx on pending_embeddings(message_id);
+-- Create function to handle new messages
+CREATE OR REPLACE FUNCTION handle_new_message()
+RETURNS TRIGGER AS $$
+DECLARE
+  channel_type text;
+  response json;
+BEGIN
+  -- Get channel type
+  SELECT type INTO channel_type
+  FROM channels
+  WHERE id = NEW.channel_id;
 
--- Function to handle new messages
-create or replace function handle_new_message()
-returns trigger
-language plpgsql security definer as $$
-begin
-  -- Check if message is from a non-private channel
-  if exists (
-    select 1 
-    from channels c 
-    where c.id = NEW.channel_id 
-    and not c.is_private
-  ) then
-    -- Insert into pending_embeddings
-    insert into pending_embeddings (message_id, status)
-    values (NEW.id, 'pending');
-  end if;
-  
-  -- Always return NEW for AFTER triggers
-  return NEW;
-end;
-$$;
+  -- Only process messages from non-private channels
+  IF channel_type != 'private' THEN
+    -- Call Edge Function to generate embedding
+    SELECT net.http_post(
+      url := current_setting('app.settings.supabase_url') || '/functions/v1/generate-embeddings',
+      headers := jsonb_build_object(
+        'Authorization', 'Bearer ' || current_setting('app.settings.service_role_key'),
+        'Content-Type', 'application/json'
+      ),
+      body := jsonb_build_object(
+        'message_id', NEW.id,
+        'content', NEW.content,
+        'channel_id', NEW.channel_id,
+        'user_id', NEW.user_id
+      )
+    ) INTO response;
+  END IF;
 
--- Drop existing trigger if it exists
-drop trigger if exists trigger_new_message_embedding on messages;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- Create the trigger
-create trigger trigger_new_message_embedding
-  after insert on messages
-  for each row
-  execute function handle_new_message();
-
--- Create function to retry failed embeddings
-create or replace function retry_failed_embeddings(max_attempts int default 3)
-returns void as $$
-begin
-  update pending_embeddings
-  set 
-    status = 'pending',
-    attempts = attempts + 1,
-    updated_at = now()
-  where 
-    status = 'failed'
-    and attempts < max_attempts
-    and (last_attempt is null or last_attempt < now() - interval '5 minutes');
-end;
-$$ language plpgsql security definer; 
+-- Create trigger for new messages
+CREATE TRIGGER trigger_new_message_embedding
+  AFTER INSERT ON messages
+  FOR EACH ROW
+  EXECUTE FUNCTION handle_new_message(); 

@@ -1,193 +1,184 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.38.4'
-import { Configuration, OpenAIApi } from 'https://esm.sh/openai@3.3.0'
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-}
+console.log('Loading generate-embeddings function...')
 
-interface Message {
-  id: string
-  content: string
-  workspace_id: string
-  channel_id: string
-  user_id: string
-  replied_to_user?: string
-  chunk_index?: number
-}
-
-interface APIError extends Error {
-  response?: {
-    status: number
-    data: unknown
-  }
-}
-
-// Constants for configuration
-const BATCH_SIZE = 100
-const MAX_RETRIES = 3
-const RETRY_DELAY = 1000 // 1 second
-
-// Preprocess message content
-function preprocessMessage(content: string): string {
-  return content
-    .replace(/```[\s\S]*?```/g, '') // Remove code blocks
-    .replace(/\s+/g, ' ')           // Normalize whitespace
-    .trim()
-}
-
-// Split long messages into chunks
-function chunkMessage(content: string, maxLength = 1000): string[] {
-  if (content.length <= maxLength) return [content]
-  
-  const chunks: string[] = []
-  const sentences = content.match(/[^.!?]+[.!?]+/g) || [content]
-  
-  let currentChunk = ''
-  for (const sentence of sentences) {
-    if ((currentChunk + sentence).length <= maxLength) {
-      currentChunk += sentence
-    } else {
-      if (currentChunk) chunks.push(currentChunk.trim())
-      currentChunk = sentence
-    }
-  }
-  if (currentChunk) chunks.push(currentChunk.trim())
-  
-  return chunks
-}
-
-// Retry mechanism for API calls
-async function withRetry<T>(
-  fn: () => Promise<T>,
-  retries = MAX_RETRIES
-): Promise<T> {
+serve(async (req) => {
   try {
-    return await fn()
-  } catch (error) {
-    const apiError = error as APIError
-    if (retries > 0 && apiError.response?.status === 429) { // Rate limit error
-      await new Promise(resolve => setTimeout(resolve, RETRY_DELAY))
-      return withRetry(fn, retries - 1)
-    }
-    throw error
-  }
-}
-
-serve(async (request: Request) => {
-  if (request.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders })
-  }
-
-  try {
-    // @ts-ignore: Deno exists in edge function environment
-    const supabaseClient = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-    )
-
-    // @ts-ignore: Deno exists in edge function environment
-    const openAIConfig = new Configuration({
-      apiKey: Deno.env.get('OPENAI_API_KEY'),
-    })
-    const openai = new OpenAIApi(openAIConfig)
-
-    // Get messages that don't have embeddings yet
-    const { data: messages, error: fetchError } = await supabaseClient
-      .from('messages')
-      .select('id, content, workspace_id, channel_id, user_id, replied_to_user')
-      .not('id', 'in', (
-        supabaseClient
-          .from('message_embeddings')
-          .select('message_id')
-      ))
-      .limit(BATCH_SIZE)
-
-    if (fetchError) {
-      throw fetchError
-    }
-
-    if (!messages?.length) {
+    // Initialize Supabase client
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')
+    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+    
+    if (!supabaseUrl || !supabaseKey) {
+      console.error('Missing Supabase credentials')
       return new Response(
-        JSON.stringify({ message: 'No new messages to process' }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        JSON.stringify({ error: 'Server configuration error' }),
+        { status: 500 }
       )
     }
 
-    const processedMessages = messages.flatMap((message: Message) => {
-      const preprocessed = preprocessMessage(message.content)
-      const chunks = chunkMessage(preprocessed)
-      return chunks.map((chunk, index) => ({
-        ...message,
-        content: chunk,
-        chunk_index: index,
-      }))
-    })
+    const supabase = createClient(supabaseUrl, supabaseKey)
 
-    const embeddings = await Promise.all(
-      processedMessages.map(async (message: Message) => {
-        const { data: embeddingResponse } = await withRetry(async () => 
-          await openai.createEmbedding({
-            model: 'text-embedding-ada-002',
-            input: message.content,
-          })
+    // Get pending messages
+    console.log('Fetching pending messages...')
+    const { data: pendingMessages, error: fetchError } = await supabase
+      .from('pending_embeddings')
+      .select(`
+        id,
+        message_id,
+        messages (
+          id,
+          content,
+          channel_id,
+          user_id
         )
+      `)
+      .eq('status', 'pending')
+      .limit(10)
 
-        return {
-          message_id: message.id,
-          embedding: embeddingResponse.data[0].embedding,
-          metadata: { 
-            content: message.content,
-            chunk_index: message.chunk_index,
-            total_chunks: processedMessages.filter((m: Message) => m.id === message.id).length,
-            user_id: message.user_id,
-            replied_to_user: message.replied_to_user,
-            timestamp: new Date().toISOString()
-          },
-          workspace_id: message.workspace_id,
-          channel_id: message.channel_id,
-          user_id: message.user_id
+    if (fetchError) {
+      console.error('Error fetching pending messages:', fetchError)
+      return new Response(
+        JSON.stringify({ error: 'Failed to fetch pending messages' }),
+        { status: 500 }
+      )
+    }
+
+    if (!pendingMessages?.length) {
+      console.log('No pending messages found')
+      return new Response(
+        JSON.stringify({ message: 'No pending messages to process' }),
+        { status: 200 }
+      )
+    }
+
+    console.log(`Found ${pendingMessages.length} pending messages`)
+
+    // Generate embedding using OpenAI
+    const openaiApiKey = Deno.env.get('OPENAI_API_KEY')
+    if (!openaiApiKey) {
+      console.error('Missing OpenAI API key')
+      return new Response(
+        JSON.stringify({ error: 'Server configuration error' }),
+        { status: 500 }
+      )
+    }
+
+    // Process each pending message
+    for (const pending of pendingMessages) {
+      const message = pending.messages
+      if (!message) {
+        console.error('Message not found for pending ID:', pending.id)
+        continue
+      }
+
+      try {
+        console.log(`Processing message ${message.id}...`)
+
+        // Mark as processing
+        console.log('Marking as processing...')
+        const { error: updateError } = await supabase
+          .from('pending_embeddings')
+          .update({ 
+            status: 'processing',
+            last_attempt: new Date().toISOString(),
+            attempts: pending.attempts + 1
+          })
+          .eq('id', pending.id)
+
+        if (updateError) {
+          console.error('Error updating status to processing:', updateError)
+          continue
         }
-      })
-    )
 
-    // Insert embeddings in batches
-    const batchSize = 20
-    for (let i = 0; i < embeddings.length; i += batchSize) {
-      const batch = embeddings.slice(i, i + batchSize)
-      const { error: insertError } = await supabaseClient
-        .from('message_embeddings')
-        .insert(batch)
+        // Generate embedding
+        console.log('Generating embedding...')
+        const embeddingResponse = await fetch('https://api.openai.com/v1/embeddings', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${openaiApiKey}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            input: message.content,
+            model: 'text-embedding-ada-002'
+          })
+        })
 
-      if (insertError) {
-        console.error(`Error inserting batch ${i/batchSize}:`, insertError)
-        throw insertError
+        if (!embeddingResponse.ok) {
+          throw new Error(await embeddingResponse.text())
+        }
+
+        const { data } = await embeddingResponse.json()
+        console.log('Successfully generated embedding')
+
+        // Store embedding
+        console.log('Storing embedding...')
+        const { error: insertError } = await supabase
+          .from('message_embeddings')
+          .insert({
+            message_id: message.id,
+            channel_id: message.channel_id,
+            user_id: message.user_id,
+            embedding: data[0].embedding,
+            original_message_content: message.content,
+            metadata: {
+              content: message.content,
+              created_at: new Date().toISOString()
+            }
+          })
+
+        if (insertError) {
+          console.error('Error storing embedding:', insertError)
+          throw insertError
+        }
+
+        console.log('Successfully stored embedding')
+
+        // Mark as completed
+        console.log('Marking as completed...')
+        const { error: completeError } = await supabase
+          .from('pending_embeddings')
+          .update({ 
+            status: 'completed',
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', pending.id)
+
+        if (completeError) {
+          console.error('Error marking as completed:', completeError)
+          continue
+        }
+
+        console.log('Successfully processed message:', message.id)
+      } catch (error) {
+        console.error('Error processing message:', error)
+        
+        // Mark as failed
+        await supabase
+          .from('pending_embeddings')
+          .update({ 
+            status: 'failed',
+            error_message: error.message,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', pending.id)
       }
     }
 
     return new Response(
       JSON.stringify({ 
-        message: `Processed ${messages.length} messages into ${embeddings.length} embeddings`,
-        success: true 
+        success: true,
+        processed: pendingMessages.length
       }),
-      {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 200,
-      }
+      { status: 200 }
     )
+
   } catch (error) {
-    const apiError = error as APIError
-    console.error('Error processing messages:', apiError)
+    console.error('Unexpected error:', error)
     return new Response(
-      JSON.stringify({ 
-        error: apiError.message,
-        details: apiError.response?.data || apiError
-      }),
-      {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: apiError.response?.status || 500,
-      }
+      JSON.stringify({ error: 'Internal server error' }),
+      { status: 500 }
     )
   }
 }) 

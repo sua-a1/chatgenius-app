@@ -7,45 +7,39 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
-const ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNsb2h3amptaWRjdWN2dnhneGFmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MDQ5ODIxODAsImV4cCI6MjAyMDU1ODE4MH0.SYLqEjz_UHRDKaY_ufHNcGBqwwx0lKGb2R6luZXjxZQ'
-
 serve(async (req) => {
+  const isScheduledInvocation = req.headers.get('x-scheduled-function') === 'true'
+  console.log('Function invoked:', new Date().toISOString(), { isScheduledInvocation })
+  
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
 
   try {
-    // Verify authorization
-    const authHeader = req.headers.get('Authorization')
-    if (!authHeader || !authHeader.includes(ANON_KEY)) {
-      return new Response(
-        JSON.stringify({ error: 'Unauthorized' }),
-        { 
-          status: 401,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        }
-      )
+    // Get environment variables
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')
+    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+    const openAIApiKey = Deno.env.get('OPENAI_API_KEY')
+
+    // Validate environment variables
+    if (!supabaseUrl || !supabaseKey || !openAIApiKey) {
+      console.error('Missing environment variables:', {
+        hasSupabaseUrl: !!supabaseUrl,
+        hasSupabaseKey: !!supabaseKey,
+        hasOpenAIKey: !!openAIApiKey
+      })
+      throw new Error('Missing required environment variables')
     }
 
     // Initialize Supabase client with service role key for internal operations
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')
-    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
-
-    if (!supabaseUrl || !supabaseKey) {
-      throw new Error('Missing Supabase environment variables')
-    }
-
     const supabase = createClient(supabaseUrl, supabaseKey)
 
     // Initialize OpenAI
-    const openAIApiKey = Deno.env.get('OPENAI_API_KEY')
-    if (!openAIApiKey) {
-      throw new Error('Missing OpenAI API key')
-    }
-
     const openai = new OpenAIApi(new Configuration({
       apiKey: openAIApiKey,
     }))
+
+    console.log('Fetching pending messages...')
 
     // Get pending messages
     const { data: pendingMessages, error: fetchError } = await supabase
@@ -68,15 +62,23 @@ serve(async (req) => {
       .limit(50)
 
     if (fetchError) {
+      console.error('Error fetching pending messages:', fetchError)
       throw fetchError
     }
 
     if (!pendingMessages?.length) {
+      console.log('No pending messages to process')
       return new Response(
-        JSON.stringify({ message: 'No pending messages to process' }),
+        JSON.stringify({ 
+          message: 'No pending messages to process',
+          isScheduledInvocation,
+          timestamp: new Date().toISOString()
+        }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
+
+    console.log(`Processing ${pendingMessages.length} messages...`)
 
     // Process each pending message
     const results = await Promise.all(
@@ -84,14 +86,19 @@ serve(async (req) => {
         try {
           const message = pending.messages
           if (!message) {
+            console.error('Message not found for pending ID:', pending.id)
             throw new Error('Message not found')
           }
+
+          console.log(`Generating embedding for message ${message.id}: "${message.content.substring(0, 50)}..."`)
 
           // Generate embedding
           const { data: embeddingResponse } = await openai.createEmbedding({
             model: 'text-embedding-ada-002',
             input: message.content,
           })
+
+          console.log(`Successfully generated embedding for message ${message.id}`)
 
           // Store embedding
           const { error: insertError } = await supabase
@@ -110,8 +117,11 @@ serve(async (req) => {
             })
 
           if (insertError) {
+            console.error(`Error storing embedding for message ${message.id}:`, insertError)
             throw insertError
           }
+
+          console.log(`Successfully stored embedding for message ${message.id}`)
 
           // Update pending status to completed
           await supabase
@@ -122,8 +132,12 @@ serve(async (req) => {
             })
             .eq('id', pending.id)
 
+          console.log(`Marked message ${message.id} as completed`)
+
           return { success: true, message_id: message.id }
         } catch (error) {
+          console.error(`Error processing message ${pending.message_id}:`, error)
+
           // Update pending status to failed
           await supabase
             .from('pending_embeddings')
@@ -140,17 +154,24 @@ serve(async (req) => {
       })
     )
 
+    console.log('Finished processing all messages:', results)
+
     return new Response(
       JSON.stringify({
         message: `Processed ${results.length} messages`,
-        results
+        results,
+        isScheduledInvocation,
+        timestamp: new Date().toISOString()
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     )
   } catch (error) {
+    console.error('Fatal error:', error)
     return new Response(
       JSON.stringify({
-        error: error.message
+        error: error.message,
+        isScheduledInvocation,
+        timestamp: new Date().toISOString()
       }),
       {
         status: 500,

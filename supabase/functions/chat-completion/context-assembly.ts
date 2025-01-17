@@ -1,125 +1,95 @@
-import { MessageContext, QueryAnalysis } from './types.ts';
+import { analyzeQuery } from './message-analyzer.ts';
+import { MessageContext, QueryAnalysis, QueryType } from './types.ts';
+import { createClient } from './deps.ts';
 
-interface ScoredContext {
-  context: MessageContext;
-  score: number;
-}
+// Initialize Supabase client
+const supabaseClient = createClient(
+  Deno.env.get('SUPABASE_URL')!,
+  Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+);
 
-interface ContextAssemblyOptions {
-  maxContextItems?: number;
-  recencyWeight?: number;
-  channelWeight?: number;
-  userWeight?: number;
-  minScore?: number;
-}
+async function getRelevantMessages(
+  workspace_id: string,
+  analysis: QueryAnalysis,
+  channel_name?: string
+): Promise<MessageContext[]> {
+  try {
+    // Build filter
+    const filter: Record<string, any> = {
+      workspace_id
+    };
 
-const DEFAULT_OPTIONS: Required<ContextAssemblyOptions> = {
-  maxContextItems: 10,
-  recencyWeight: 0.4,
-  channelWeight: 0.3,
-  userWeight: 0.3,
-  minScore: 0.2
-};
+    if (channel_name) {
+      filter.channel_name = channel_name;
+    }
 
-function calculateRecencyScore(timestamp: string): number {
-  const messageDate = new Date(timestamp);
-  const now = new Date();
-  const hoursDifference = (now.getTime() - messageDate.getTime()) / (1000 * 60 * 60);
-  
-  // Score decreases logarithmically with time
-  // 1.0 for messages in the last hour
-  // 0.8 for messages in the last day
-  // 0.6 for messages in the last week
-  // 0.4 for messages in the last month
-  // 0.2 for older messages
-  if (hoursDifference <= 1) return 1.0;
-  if (hoursDifference <= 24) return 0.8;
-  if (hoursDifference <= 168) return 0.6;
-  if (hoursDifference <= 720) return 0.4;
-  return 0.2;
-}
+    if (analysis.entities.timeframe) {
+      const now = new Date();
+      if (analysis.entities.timeframe === 'today') {
+        filter.created_at_gte = new Date(now.setHours(0, 0, 0, 0)).toISOString();
+        filter.created_at_lte = new Date(now.setHours(23, 59, 59, 999)).toISOString();
+      } else if (analysis.entities.timeframe === 'recent') {
+        filter.created_at_gte = new Date(now.setHours(now.getHours() - 24)).toISOString();
+        filter.created_at_lte = new Date().toISOString();
+      }
+    }
 
-function calculateChannelRelevance(
-  context: MessageContext,
-  queryAnalysis: QueryAnalysis
-): number {
-  if (!queryAnalysis.entities.channels || queryAnalysis.entities.channels.length === 0) {
-    return 0.5; // Neutral score if no channel context
+    if (analysis.entities.users && analysis.entities.users.length > 0) {
+      filter.username = analysis.entities.users[0]; // For now, just use the first user
+    }
+
+    // Call search_messages function
+    const { data: messages, error } = await supabaseClient.rpc('search_messages', {
+      query_embedding: [], // Empty embedding for now, we'll rely on filters
+      filter,
+      match_count: analysis.type === QueryType.CHANNEL_CONTEXT ? 100 : 10
+    });
+
+    if (error) {
+      console.error('Error searching messages:', error);
+      return [];
+    }
+
+    return messages.map(msg => ({
+      content: msg.content,
+      created_at: msg.metadata.created_at,
+      channel_id: msg.metadata.channel_id,
+      channel_name: msg.metadata.channel_name,
+      user: msg.metadata.user ? {
+        id: msg.metadata.user.id,
+        username: msg.metadata.user.username,
+        full_name: msg.metadata.user.full_name,
+        email: msg.metadata.user.email,
+        avatar_url: msg.metadata.user.avatar_url
+      } : undefined,
+      metadata: msg.metadata
+    }));
+  } catch (error) {
+    console.error('Error getting relevant messages:', error);
+    return [];
   }
+}
 
-  if (!context.channel_name) {
-    return 0.0; // No score if message has no channel
+export async function assembleContext(
+  message: string,
+  workspace_id: string,
+  user_id: string,
+  channel_name?: string
+): Promise<MessageContext[]> {
+  try {
+    // Analyze the query to determine context requirements
+    const analysis = analyzeQuery(message);
+    
+    // Get relevant messages based on the query analysis
+    const relevantMessages = await getRelevantMessages(
+      workspace_id,
+      analysis,
+      channel_name
+    );
+
+    return relevantMessages;
+  } catch (error) {
+    console.error('Error assembling context:', error);
+    return [];
   }
-
-  // Check if the message's channel matches any of the queried channels
-  return queryAnalysis.entities.channels.includes(context.channel_name.toLowerCase()) ? 1.0 : 0.2;
-}
-
-function calculateUserRelevance(
-  context: MessageContext,
-  queryAnalysis: QueryAnalysis
-): number {
-  if (!queryAnalysis.entities.users || queryAnalysis.entities.users.length === 0) {
-    return 0.5; // Neutral score if no user context
-  }
-
-  if (!context.username) {
-    return 0.0; // No score if message has no user
-  }
-
-  // Check if the message's user matches any of the queried users
-  return queryAnalysis.entities.users.includes(context.username.toLowerCase()) ? 1.0 : 0.2;
-}
-
-function scoreContext(
-  context: MessageContext,
-  queryAnalysis: QueryAnalysis,
-  options: Required<ContextAssemblyOptions>
-): number {
-  const recencyScore = calculateRecencyScore(context.created_at);
-  const channelScore = calculateChannelRelevance(context, queryAnalysis);
-  const userScore = calculateUserRelevance(context, queryAnalysis);
-
-  return (
-    recencyScore * options.recencyWeight +
-    channelScore * options.channelWeight +
-    userScore * options.userWeight
-  );
-}
-
-function deduplicateContext(contexts: ScoredContext[]): ScoredContext[] {
-  const seen = new Set<string>();
-  return contexts.filter(({ context }) => {
-    const key = `${context.channel_id}-${context.user_id}-${context.content}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-}
-
-export function assembleContext(
-  contexts: MessageContext[],
-  queryAnalysis: QueryAnalysis,
-  options: ContextAssemblyOptions = {}
-): MessageContext[] {
-  const mergedOptions = { ...DEFAULT_OPTIONS, ...options };
-
-  // Score all contexts
-  const scoredContexts: ScoredContext[] = contexts
-    .map(context => ({
-      context,
-      score: scoreContext(context, queryAnalysis, mergedOptions)
-    }))
-    .filter(({ score }) => score >= mergedOptions.minScore);
-
-  // Sort by score (descending)
-  scoredContexts.sort((a, b) => b.score - a.score);
-
-  // Deduplicate
-  const dedupedContexts = deduplicateContext(scoredContexts);
-
-  // Take top N
-  return dedupedContexts
-    .slice(0, mergedOptions.maxContextItems)
-    .map(({ context }) => context);
 } 

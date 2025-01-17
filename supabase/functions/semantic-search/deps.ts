@@ -17,16 +17,4 @@ declare global {
   const Deno: {
     env: Env;
   };
-}
-
-// Type declarations for external modules
-export interface User {
-  id: string;
-  username: string;
-  full_name: string;
-}
-
-export interface UserMapEntry {
-  username: string;
-  full_name: string;
 } 

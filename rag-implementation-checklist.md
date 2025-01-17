@@ -170,64 +170,64 @@
 - [ ] Validate rate limiting 
 
 ## 13. Enhanced Prompting & Context Management
-- [ ] Dynamic Instruction Selection
+- [x] Dynamic Instruction Selection
   ```typescript
-  - [ ] Create instruction sets module:
+  - [x] Create instruction sets module:
     - Base system prompts for different query types
     - Contextual instructions for workspace/channel/user queries
     - Format instructions for different response types
     - Error handling instructions
   ```
-  - [ ] Implement instruction selection logic:
+  - [x] Implement instruction selection logic:
     ```typescript
-    - [ ] Query type classifier
-    - [ ] Context-aware instruction composer
-    - [ ] Instruction templating system
+    - [x] Query type classifier
+    - [x] Context-aware instruction composer
+    - [x] Instruction templating system
     ```
 
-- [ ] Pre-processing Logic
+- [x] Pre-processing Logic
   ```typescript
-  - [ ] Message analyzer service:
+  - [x] Message analyzer service:
     - Query type detection (workspace/channel/user/general)
     - Entity extraction (usernames, channels, dates)
     - Intent classification
     - Contextual requirements detection
   ```
-  - [ ] Query enhancement pipeline:
+  - [x] Query enhancement pipeline:
     ```typescript
-    - [ ] Query reformulation for better semantic search
-    - [ ] Context window optimization
-    - [ ] Entity resolution and validation
+    - [x] Query reformulation for better semantic search
+    - [x] Context window optimization
+    - [x] Entity resolution and validation
     ```
 
-- [ ] Contextual Relevance Filtering
+- [x] Contextual Relevance Filtering
   ```typescript
-  - [ ] Enhanced vector search:
+  - [x] Enhanced vector search:
     - Implement tiered retrieval strategy
     - Add metadata filtering
     - Add recency bias for time-sensitive queries
   ```
-  - [ ] Context assembly pipeline:
+  - [x] Context assembly pipeline:
     ```typescript
-    - [ ] Relevance scoring system
-    - [ ] Context deduplication
-    - [ ] Context ordering by relevance
-    - [ ] Dynamic context window sizing
+    - [x] Relevance scoring system
+    - [x] Context deduplication
+    - [x] Context ordering by relevance
+    - [x] Dynamic context window sizing
     ```
 
-- [ ] Prompt Engineering Improvements
+- [x] Prompt Engineering Improvements
   ```typescript
-  - [ ] Base system prompt enhancements:
+  - [x] Base system prompt enhancements:
     - Clear role and capability definition
     - Explicit formatting instructions
     - Error handling guidance
   ```
-  - [ ] Response templates:
+  - [x] Response enhancements:
     ```typescript
-    - [ ] Channel-specific formats
-    - [ ] User-specific formats
-    - [ ] Error message templates
-    - [ ] Clarification request templates
+    - [x] Channel-specific 
+    - [x] User-specific 
+    - [x] Error message 
+    - [x] General assistance 
     ```
 
 ## 14. Implementation Plan
