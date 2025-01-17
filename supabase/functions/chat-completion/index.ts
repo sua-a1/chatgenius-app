@@ -1,5 +1,5 @@
 import { serve, createClient, OpenAI, User, UserMapEntry } from './deps.ts';
-import { analyzeQuery } from './message-analyzer.ts';
+import { analyzeQuery, cleanChannelName } from './message-analyzer.ts';
 import { assembleContext } from './context-assembly.ts';
 import { composeInstructions, getInstructionSet } from './instruction-sets.ts';
 import { MessageContext, MessageMetadata, QueryType } from './types.ts';
@@ -31,7 +31,8 @@ interface AggregatedResult {
 }
 
 function formatAggregatedResult(result: AggregatedResult, queryType: QueryType, channel_name?: string, timeframe?: string): string {
-  const channelContext = channel_name ? ` in channel #${channel_name}` : '';
+  const cleanedChannelName = channel_name ? cleanChannelName(channel_name) : undefined;
+  const channelContext = cleanedChannelName ? ` in channel #${cleanedChannelName}` : '';
   const timeContext = timeframe ? ` during ${timeframe}` : '';
 
   if (queryType === QueryType.COUNT_QUERY) {
@@ -169,7 +170,7 @@ function formatContextMessages(relevantMessages: MessageContext[]): string {
     const formattedDays = Object.entries(messagesByDay).map(([date, messages]) => {
     const formattedMessages = messages.map(msg => {
       const time = new Date(msg.created_at).toLocaleTimeString();
-      const channelInfo = msg.channel_name ? ` in #${msg.channel_name}` : '';
+      const channelInfo = msg.channel_name ? ` in #${cleanChannelName(msg.channel_name)}` : '';
         
         // Handle user information carefully
         let userInfo = '@unknown_user';
@@ -227,7 +228,8 @@ function createSystemPrompt(
   
   // Add channel context if available
   if (channelName) {
-    contextualFocus += `\nYou are currently focusing on messages from the #${channelName} channel.`;
+    const cleanedChannelName = cleanChannelName(channelName);
+    contextualFocus += `\nYou are currently focusing on messages from the #${cleanedChannelName} channel.`;
   }
   
   // Add user context if available
@@ -408,20 +410,22 @@ async function handleChatRequest(req: ChatRequest): Promise<Response> {
   try {
     const { message, workspace_id, user_id, user, channel_name } = req;
 
-    // Analyze the query
-    const analysis = analyzeQuery(message);
+    // Analyze the query with current user's username
+    const analysis = analyzeQuery(message, user?.username);
     console.log('Query analysis:', {
       type: analysis.type,
       entities: analysis.entities,
-      contextRequirements: analysis.contextRequirements
+      contextRequirements: analysis.contextRequirements,
+      currentUser: user?.username  // Log current user for debugging
     });
     
-    // Get relevant context
+    // Get relevant context with current username
     const contextResult = await assembleContext(
       message,
       workspace_id,
       user_id,
-      channel_name
+      channel_name,
+      user?.username  // Pass the current username
     );
 
     // Handle aggregated results differently
@@ -524,6 +528,21 @@ async function handleChatRequest(req: ChatRequest): Promise<Response> {
       }),
       { status: 500, headers: { 'Content-Type': 'application/json' } }
     );
+  }
+}
+
+export async function generateEmbedding(text: string): Promise<number[]> {
+  try {
+    const openai = await getOpenAIClient();
+    const response = await openai.embeddings.create({
+      model: 'text-embedding-ada-002',
+      input: text.replace(/\n/g, ' ')
+    });
+
+    return response.data[0].embedding;
+  } catch (error) {
+    console.error('Error generating embedding:', error);
+    throw error;
   }
 }
 

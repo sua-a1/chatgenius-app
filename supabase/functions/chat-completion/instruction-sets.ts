@@ -128,16 +128,60 @@ const SUMMARY_QUERY_INSTRUCTIONS = {
   base: `${BASE_ROLE}
 Your focus is on providing clear, concise summaries of discussions and activities.
 You should:
-- Identify main discussion topics
-- Highlight key decisions or conclusions
-- Note significant participant contributions
-- Maintain chronological clarity`,
+- Identify and analyze all mentions of the requested topic, both direct and indirect
+- Extract and summarize opinions, views, and sentiments about the topic
+- Note the progression of ideas and viewpoints over time
+- Highlight key insights, concerns, or conclusions about the topic
+- Consider both explicit statements and contextual implications
+- Maintain chronological clarity and user attribution`,
   formatInstructions: [FORMAT_INSTRUCTIONS],
   contextInstructions: [
+    'When summarizing topic-specific discussions:',
+    '- Include ALL messages that mention or discuss the topic, even indirectly',
+    '- Consider both explicit mentions and related concepts',
+    '- Note how the topic is discussed in different contexts',
+    '- Track opinion evolution and sentiment changes',
+    '- Include relevant examples using exact quotes',
+    '- If a message seems relevant but indirect, explain the connection',
     'Focus on the most important points',
     'Maintain chronological order when relevant',
     'Include participant context when significant',
     'Highlight any decisions or action items'
+  ],
+  errorInstructions: [
+    'If messages contain topic-relevant content, ALWAYS include them even if the connection seems indirect',
+    'When asked about a specific topic, analyze ALL messages for relevance before concluding there is no information',
+    'If uncertain about relevance, include the message and explain your reasoning',
+    'Never skip messages that might contain relevant information, even if mentioned in passing'
+  ]
+};
+
+const TOPIC_ANALYSIS_INSTRUCTIONS = {
+  role: 'Topic Analyzer',
+  base: `${BASE_ROLE}
+Your focus is on analyzing how specific topics are discussed across messages.
+You should:
+- Identify both direct and indirect mentions of the topic
+- Analyze opinions, views, and sentiments expressed
+- Track how discussion of the topic evolves
+- Note contextual references and implications
+- Consider related concepts and subtopics`,
+  formatInstructions: [FORMAT_INSTRUCTIONS],
+  contextInstructions: [
+    'Look for both explicit and implicit topic references',
+    'Consider the broader context of discussions',
+    'Track opinion evolution over time',
+    'Note how the topic connects to other discussions',
+    'Include relevant examples and quotes',
+    'Explain contextual connections when needed'
+  ],
+  errorInstructions: [
+    'Before concluding no relevant messages exist:',
+    '- Check for indirect references to the topic',
+    '- Consider related concepts and terminology',
+    '- Look for contextual discussions',
+    '- Analyze message implications',
+    'If uncertain about relevance, include the message and explain why'
   ]
 };
 
@@ -154,7 +198,23 @@ export function getInstructionSet(type: QueryType): InstructionSet {
     case QueryType.STATISTICAL_QUERY:
       return STATISTICAL_QUERY_INSTRUCTIONS;
     case QueryType.SUMMARY_QUERY:
-      return SUMMARY_QUERY_INSTRUCTIONS;
+      // For summary queries, combine summary and topic analysis instructions
+      return {
+        role: 'Topic-Aware Summarizer',
+        base: `${SUMMARY_QUERY_INSTRUCTIONS.base}\n\n${TOPIC_ANALYSIS_INSTRUCTIONS.base}`,
+        formatInstructions: [
+          ...(SUMMARY_QUERY_INSTRUCTIONS.formatInstructions || []),
+          ...(TOPIC_ANALYSIS_INSTRUCTIONS.formatInstructions || [])
+        ],
+        contextInstructions: [
+          ...(SUMMARY_QUERY_INSTRUCTIONS.contextInstructions || []),
+          ...(TOPIC_ANALYSIS_INSTRUCTIONS.contextInstructions || [])
+        ],
+        errorInstructions: [
+          ...(SUMMARY_QUERY_INSTRUCTIONS.errorInstructions || []),
+          ...(TOPIC_ANALYSIS_INSTRUCTIONS.errorInstructions || [])
+        ]
+      };
     default:
       return GENERAL_ASSISTANCE_INSTRUCTIONS;
   }

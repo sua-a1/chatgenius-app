@@ -5,7 +5,8 @@ export enum QueryType {
   GENERAL_ASSISTANCE = 'general_assistance',
   COUNT_QUERY = 'count_query',
   STATISTICAL_QUERY = 'statistical_query',
-  SUMMARY_QUERY = 'summary_query'
+  SUMMARY_QUERY = 'summary_query',
+  TOPIC_QUERY = 'topic_query'
 }
 
 export interface MessageMetadata {
@@ -37,20 +38,34 @@ export interface MessageContext {
   is_deleted?: boolean;
 }
 
+export interface AggregatedResult {
+  count?: number;
+  statistics?: {
+    user_id: string;
+    username: string;
+    count: number;
+  }[];
+}
+
 export interface QueryAnalysis {
   type: QueryType;
   entities: {
-    channels?: string[];
-    users?: string[];
+    channels: string[];
+    users: string[];
     timeframe?: string;
-    query?: string;
     aggregation?: {
-      operation: 'count' | 'average' | 'most' | 'least';
-      target: 'messages' | 'reactions' | 'files';
-      groupBy?: 'user' | 'channel' | 'time';
+      operation: 'count' | 'most' | 'least';
+      target: 'messages' | 'reactions' | 'files' | 'activity' | 'opinions';
+      groupBy?: 'user' | 'channel';
+      subjects?: {
+        users?: string[];
+        channels?: string[];
+        topics?: string[];
+      };
     };
+    topics: string[];
   };
-  contextRequirements?: {
+  contextRequirements: {
     needsWorkspaceContext: boolean;
     needsChannelContext: boolean;
     needsUserContext: boolean;
@@ -58,6 +73,8 @@ export interface QueryAnalysis {
     needsRecentMessages: boolean;
     needsAggregation: boolean;
     needsStatistics: boolean;
+    needsContentAnalysis: boolean;
+    needsMessageContext: boolean;
   };
 }
 

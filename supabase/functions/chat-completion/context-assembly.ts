@@ -1,61 +1,7 @@
-import { analyzeQuery } from './message-analyzer.ts';
-import { MessageContext, QueryAnalysis, QueryType } from './types.ts';
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3';
-import { enrichContextWithMetadata } from './index.ts';
-import { OpenAI } from './deps.ts';
-
-// Initialize OpenAI client
-const openai = new OpenAI({
-  apiKey: Deno.env.get('OPENAI_API_KEY')!
-});
-
-// Initialize Supabase client with auth context
-function createSupabaseClient(user_id: string) {
-  const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-  return createClient(
-    Deno.env.get('SUPABASE_URL')!,
-    serviceRoleKey,
-    {
-      auth: {
-        persistSession: false,
-        autoRefreshToken: false
-      },
-      global: {
-        headers: {
-          // Set service role auth
-          Authorization: `Bearer ${serviceRoleKey}`,
-          // Pass user context for RLS policies
-          'x-supabase-auth-user-id': user_id,
-          // Set role to service_role to bypass RLS
-          'x-supabase-auth-role': 'service_role'
-        }
-      }
-    }
-  );
-}
-
-interface AggregatedResult {
-  count?: number;
-  statistics?: {
-    user_id: string;
-    username: string;
-    count: number;
-  }[];
-}
-
-async function generateEmbedding(text: string): Promise<number[]> {
-  try {
-    const response = await openai.embeddings.create({
-      model: 'text-embedding-ada-002',
-      input: text.replace(/\n/g, ' ')
-    });
-
-    return response.data[0].embedding;
-  } catch (error) {
-    console.error('Error generating embedding:', error);
-    throw error;
-  }
-}
+import { QueryType, QueryAnalysis, MessageContext, AggregatedResult } from './types.ts';
+import { createSupabaseClient } from './deps.ts';
+import { generateEmbedding, enrichContextWithMetadata } from './index.ts';
+import { analyzeQuery, cleanChannelName } from './message-analyzer.ts';
 
 async function getRelevantMessages(
   workspace_id: string,
@@ -73,7 +19,8 @@ async function getRelevantMessages(
       channel_name,
       analysis: {
         type: analysis.type,
-        entities: analysis.entities
+        entities: analysis.entities,
+        users: analysis.entities.users
       }
     });
 
@@ -82,17 +29,29 @@ async function getRelevantMessages(
       workspace_id
     };
 
-    // Handle channel filtering
+    // Handle channel filtering - ensure channel names are cleaned
     if (channel_name) {
-      filter.channel_name = channel_name.trim();
+      console.log('Channel name before cleaning:', channel_name);
+      const cleaned = cleanChannelName(channel_name);
+      console.log('Channel name after cleaning:', cleaned);
+      filter.channel_name = cleaned;
     } else if (analysis.entities.channels && analysis.entities.channels.length > 0) {
-      filter.channel_name = analysis.entities.channels[0].trim();
+      console.log('Channel from analysis before cleaning:', analysis.entities.channels[0]);
+      const cleaned = cleanChannelName(analysis.entities.channels[0]);
+      console.log('Channel from analysis after cleaning:', cleaned);
+      filter.channel_name = cleaned;
     }
 
-    // Handle user filtering - pass username directly in filter
+    // Handle user filtering - ensure we're using the correct username
     if (analysis.entities.users && analysis.entities.users.length > 0) {
       const username = analysis.entities.users[0].trim();
-      filter.username = username; // Pass username directly, let the database function handle the lookup
+      console.log('Setting username filter:', username);
+      filter.username = username;
+    }
+
+    // Handle topic filtering
+    if (analysis.entities.topics && analysis.entities.topics.length > 0) {
+      filter.topic = analysis.entities.topics[0].trim();
     }
 
     // Handle timeframe filtering
@@ -117,15 +76,28 @@ async function getRelevantMessages(
     // Generate embedding for semantic search
     let queryEmbedding: number[] = [];
     try {
-      // For count queries, we'll rely more on filters than semantic search
+      let searchText = '';
+      
+      // Build search text based on query type and entities
       if (analysis.type === QueryType.COUNT_QUERY || analysis.type === QueryType.STATISTICAL_QUERY) {
-        // Use a simple embedding that won't affect the search much
-        queryEmbedding = await generateEmbedding("messages in channel");
+        searchText = "messages in channel";
+      } else if (analysis.entities.topics && analysis.entities.topics.length > 0) {
+        // Include topic in semantic search
+        const topic = analysis.entities.topics[0];
+        searchText = `messages about ${topic}`;
+        if (analysis.type === QueryType.SUMMARY_QUERY) {
+          searchText = `discussions and opinions about ${topic}`;
+        }
+      } else if (analysis.entities.users && analysis.entities.users.length > 0) {
+        // Include user context in search text
+        const username = analysis.entities.users[0];
+        searchText = `messages sent by ${username}`;
       } else {
-        // For other queries, use the actual query for semantic search
-        const searchText = analysis.entities.query || "recent messages";
-        queryEmbedding = await generateEmbedding(searchText);
+        searchText = "recent messages";
       }
+
+      console.log('Generating embedding for search text:', searchText);
+      queryEmbedding = await generateEmbedding(searchText);
     } catch (error) {
       console.error('Error generating embedding:', error);
       // Continue with empty embedding, but log the error
@@ -207,11 +179,12 @@ export async function assembleContext(
   message: string,
   workspace_id: string,
   user_id: string,
-  channel_name?: string
+  channel_name?: string,
+  currentUsername?: string
 ): Promise<MessageContext[] | AggregatedResult> {
   try {
-    // Analyze the query to determine context requirements
-    const analysis = analyzeQuery(message);
+    // Analyze the query to determine context requirements with current username
+    const analysis = analyzeQuery(message, currentUsername);
     
     // Get relevant messages based on the query analysis
     return await getRelevantMessages(

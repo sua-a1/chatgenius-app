@@ -15,7 +15,8 @@ returns table (
   id uuid,
   content text,
   metadata jsonb,
-  similarity float
+  similarity float,
+  subject_group text
 )
 language plpgsql
 security definer
@@ -25,17 +26,44 @@ declare
   workspace_id_param uuid;
   effective_limit int;
   target_username text;
+  target_channel text;
+  comparison_subjects jsonb;
+  is_comparison boolean;
+  topic_search boolean;
+  topic_query text;
+  similarity_threshold float;
 begin
   -- Extract workspace_id from filter
   workspace_id_param := (filter->>'workspace_id')::uuid;
   
+  -- Extract comparison info if present
+  comparison_subjects := filter->'comparison_subjects';
+  is_comparison := comparison_subjects is not null and 
+                  (jsonb_array_length(comparison_subjects->'users') > 0 or 
+                   jsonb_array_length(comparison_subjects->'channels') > 0);
+  
+  -- Extract topic search info
+  topic_search := filter->>'topic' is not null;
+  topic_query := filter->>'topic';
+  
+  -- Extract user and channel filters
+  target_username := filter->>'username';
+  target_channel := filter->>'channel_name';
+
+  -- Set similarity threshold based on query type
+  similarity_threshold := case
+    when topic_search and (target_username is not null or target_channel is not null) then
+      0.5  -- More lenient for combined topic + user/channel searches
+    when topic_search then
+      0.6  -- Lenient for topic-only searches
+    else
+      0.7  -- Default threshold
+  end;
+
   -- Require workspace_id
   if workspace_id_param is null then
     raise exception 'workspace_id is required in filter';
   end if;
-
-  -- Extract username if provided
-  target_username := filter->>'username';
 
   -- Skip workspace access check for service role
   if auth.role() <> 'service_role' then
@@ -50,10 +78,21 @@ begin
     end if;
   end if;
 
-  -- Determine effective limit based on whether it's a channel or user query
+  -- Determine effective limit based on query type and filters
   effective_limit := case
-    when filter->>'channel_name' is not null or target_username is not null then
-      greatest(match_count, 100)  -- Use at least 100 for channel/user queries
+    when is_comparison then
+      greatest(match_count * 3, 150)  -- Take more results for comparison
+    when topic_search then
+      case
+        when target_username is not null and target_channel is not null then
+          greatest(match_count * 4, 200)  -- More results for combined user+channel+topic
+        when target_username is not null or target_channel is not null then
+          greatest(match_count * 3, 150)  -- More results for user/channel+topic
+        else
+          greatest(match_count * 2, 100)  -- Base topic search
+      end
+    when target_username is not null or target_channel is not null then
+      greatest(match_count * 2, 100)  -- More results for user/channel queries
     else
       match_count
   end;
@@ -79,15 +118,64 @@ begin
         'original_message_content', me.original_message_content
       ) as message_metadata,
       1 - (me.embedding <=> query_embedding) as message_similarity,
+      case
+        when is_comparison then
+          case
+            when comparison_subjects->'users' ? u.username then u.username::text
+            when comparison_subjects->'channels' ? c.name then c.name::text
+            else 'other'
+          end
+        else
+          case 
+            -- Combined user+channel grouping
+            when target_username is not null and target_channel is not null then
+              concat(u.username, ':', c.name)::text
+            -- Individual grouping
+            when target_channel is not null then c.name::text
+            when target_username is not null then u.username::text
+            else 'default'
+          end
+      end as group_key,
       row_number() over (
         partition by 
-          case 
-            when filter->>'channel_name' is not null then m.channel_id 
-            when target_username is not null then m.user_id
-            else null 
+          case
+            when is_comparison then
+              case
+                when comparison_subjects->'users' ? u.username then u.username::text
+                when comparison_subjects->'channels' ? c.name then c.name::text
+                else 'other'
+              end
+            -- Combined user+channel partitioning
+            when target_username is not null and target_channel is not null then
+              concat(u.username, ':', c.name)::text
+            -- Individual partitioning
+            when target_channel is not null then c.name::text
+            when target_username is not null then u.username::text
+            else null::text
           end
-        order by me.embedding <=> query_embedding
-      ) as rank_in_group
+        order by 
+          case 
+            when topic_search then
+              -- Boost messages that explicitly mention the topic
+              case 
+                when m.content ilike '%' || topic_query || '%' then 3
+                when m.content ~* concat('\y', topic_query, '\y') then 2
+                else 1
+              end * (1 - (me.embedding <=> query_embedding))
+            else
+              1 - (me.embedding <=> query_embedding)
+          end desc
+      ) as rank_in_group,
+      case 
+        when topic_search then
+          case 
+            when m.content ilike '%' || topic_query || '%' then 3
+            when m.content ~* concat('\y', topic_query, '\y') then 2
+            else 1
+          end * (1 - (me.embedding <=> query_embedding))
+        else
+          1 - (me.embedding <=> query_embedding)
+      end as adjusted_similarity
     from
       messages m
       inner join channels c on c.id = m.channel_id
@@ -115,16 +203,33 @@ begin
           )
         )
       )
+      -- Apply comparison filters if present
+      and case
+        when is_comparison then
+          (comparison_subjects->'users' ? u.username or
+           comparison_subjects->'channels' ? c.name)
+        else true
+      end
       -- Apply channel filter if provided
       and case
-        when filter->>'channel_name' is not null then
-          lower(c.name) = lower(filter->>'channel_name')
+        when target_channel is not null then
+          lower(c.name) = lower(target_channel)
         else true
       end
       -- Apply user filter if provided
       and case
         when target_username is not null then
           lower(u.username) = lower(target_username)
+        else true
+      end
+      -- Apply topic filter if provided
+      and case
+        when topic_search then
+          -- Include messages that are semantically similar to the topic
+          -- or explicitly mention it
+          (1 - (me.embedding <=> query_embedding)) > similarity_threshold or
+          m.content ilike '%' || topic_query || '%' or
+          m.content ~* concat('\y', topic_query, '\y')
         else true
       end
       -- Only return latest, non-deleted messages
@@ -146,17 +251,20 @@ begin
     message_id as id,
     message_content as content,
     message_metadata as metadata,
-    message_similarity as similarity
+    adjusted_similarity as similarity,
+    group_key as subject_group
   from ranked_messages
   where
-    -- For channel/user queries, take more messages per group
+    -- For comparison/channel/user queries, take more messages per group
     case 
-      when filter->>'channel_name' is not null or target_username is not null then
+      when is_comparison or target_channel is not null or target_username is not null then
         rank_in_group <= effective_limit
       else
         true
     end
-  order by message_similarity desc
+  order by 
+    case when is_comparison then group_key end nulls last,
+    adjusted_similarity desc
   limit effective_limit;
 end;
 $function$; 

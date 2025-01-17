@@ -71,6 +71,18 @@ export async function POST(request: Request) {
       queryName: 'search_messages'
     });
 
+    // Get user profile to ensure we have the username
+    const { data: userProfile, error: userError } = await supabase
+      .from('users')
+      .select('username, full_name')
+      .eq('id', session.user.id)
+      .single();
+
+    if (userError) {
+      console.error('Error fetching user profile:', userError);
+      return NextResponse.json({ error: 'Failed to fetch user profile' }, { status: 500 });
+    }
+
     try {
       // Call chat-completion function with the message and workspace context
       const { data: completion, error: completionError } = await supabase.functions.invoke('chat-completion', {
@@ -82,11 +94,11 @@ export async function POST(request: Request) {
           user: {
             id: session.user.id,
             email: session.user.email,
-            username: session.user.user_metadata?.username,
-            full_name: session.user.user_metadata?.full_name
+            username: userProfile.username,
+            full_name: userProfile.full_name
           }
         }
-      })
+      });
 
       if (completionError) {
         console.error('Error calling chat-completion:', completionError)
